@@ -33,8 +33,8 @@ router.post("/asignar-individual", requireAuth, requireRole("admin"), asignarInd
 router.get("/cargas/:id/resumen-zonas", requireAuth, requireRole("admin"), resumenZonasCarga);
 
 // El vendedor consulta su propia cartera y prospecta nuevos clientes
-router.get("/mis-leads", requireAuth, requireRole("vendedor"), misLeads);
-router.post("/prospectar", requireAuth, requireRole("vendedor"), crearLeadProspecto);
-router.put("/:id", requireAuth, requireRole("vendedor"), actualizarLead);
+router.get("/mis-leads", requireAuth, requireRole("vendedor", "admin"), misLeads);
+router.post("/prospectar", requireAuth, requireRole("vendedor", "admin"), crearLeadProspecto);
+router.put("/:id", requireAuth, requireRole("vendedor", "admin"), actualizarLead);
 
 module.exports = router;
