@@ -52,8 +52,19 @@ async function registrarVisita(req, res) {
     await conn.beginTransaction();
 
     const resultadoDB = normalizarResultado(resultado);
-    const fotoUrl = req.files && req.files['foto'] ? `/uploads/${req.files['foto'][0].filename}` : null;
-    const firmaUrl = req.files && req.files['firma'] ? `/uploads/${req.files['firma'][0].filename}` : null;
+
+    // Obtener URLs de imagen: Cloudinary devuelve .path (URL), Local devuelve .filename
+    const getFileUrl = (files, field) => {
+      if (!files || !files[field]) return null;
+      const file = files[field][0];
+      // Si el motor es Cloudinary, 'path' es la URL completa
+      if (file.path && file.path.startsWith('http')) return file.path;
+      // Si es Local, usamos el filename prefijado
+      return `/uploads/${file.filename}`;
+    };
+
+    const fotoUrl = getFileUrl(req.files, 'foto');
+    const firmaUrl = getFileUrl(req.files, 'firma');
 
     const [visitaResult] = await conn.query(
       `INSERT INTO visitas (lead_id, vendedor_id, resultado, lat_checkin, lng_checkin, distancia_al_cliente_m, notas, foto_url, firma_url)

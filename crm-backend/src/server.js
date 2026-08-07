@@ -26,7 +26,7 @@ app.use(cors());
 app.use(express.json());
 
 // Servir archivos estaticos (fotos y firmas)
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+app.use(express.static(path.join(__dirname, "..")));
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
