@@ -1,0 +1,366 @@
+const pool = require("../config/db");
+
+/**
+ * KPIs del vendedor autenticado: avance del dia y del mes vigente.
+ * Pensado para la pantalla principal de la app (ver mockup "prototipo_app_vendedor_campo").
+ */
+async function kpisVendedor(req, res) {
+  const vendedorId = req.usuario.id;
+
+  try {
+    const [[hoy]] = await pool.query(
+      `SELECT
+         COUNT(*) AS visitados,
+         SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS ventas,
+         COALESCE(SUM(ve.monto), 0) AS monto
+       FROM visitas v
+       LEFT JOIN ventas ve ON ve.visita_id = v.id
+       WHERE v.vendedor_id = ? AND DATE(v.fecha) = DATE(NOW())`,
+      [vendedorId]
+    );
+
+    const [[asignadosHoy]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM leads
+       WHERE vendedor_id = ? AND estado IN ('asignado', 'contactado')`,
+      [vendedorId]
+    );
+
+    const [[mes]] = await pool.query(
+      `SELECT
+         COUNT(*) AS visitados,
+         SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS ventas,
+         COALESCE(SUM(ve.monto), 0) AS monto
+       FROM visitas v
+       LEFT JOIN ventas ve ON ve.visita_id = v.id
+       WHERE v.vendedor_id = ?
+         AND YEAR(v.fecha) = YEAR(NOW()) AND MONTH(v.fecha) = MONTH(NOW())`,
+      [vendedorId]
+    );
+
+    const conversionHoy = hoy.visitados > 0 ? Math.round((hoy.ventas / hoy.visitados) * 100) : 0;
+    const conversionMes = mes.visitados > 0 ? Math.round((mes.ventas / mes.visitados) * 100) : 0;
+
+    res.json({
+      hoy: {
+        visitados: hoy.visitados,
+        pendientes: asignadosHoy.total,
+        ventas: hoy.ventas || 0,
+        monto: hoy.monto,
+        conversion_pct: conversionHoy,
+      },
+      mes: {
+        visitados: mes.visitados,
+        ventas: mes.ventas || 0,
+        monto: mes.monto,
+        conversion_pct: conversionMes,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al calcular los KPIs del vendedor" });
+  }
+}
+
+/**
+ * Dashboard general del administrador: ventas del mes, conversion, cobertura
+ * por zona, ventas por semana y ranking de vendedores.
+ */
+async function dashboardAdmin(req, res) {
+  try {
+    const [[resumen]] = await pool.query(
+      `SELECT
+         COALESCE(SUM(ve.monto), 0) AS ventas_mes,
+         COUNT(DISTINCT ve.id) AS leads_convertidos_mes
+       FROM ventas ve
+       JOIN visitas v ON v.id = ve.visita_id
+       WHERE YEAR(ve.fecha) = YEAR(CURDATE()) AND MONTH(ve.fecha) = MONTH(CURDATE())`
+    );
+
+    const [[activosHoy]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM jornadas WHERE fecha = CURDATE() AND hora_ingreso IS NOT NULL`
+    );
+
+    const [[totalVendedores]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM usuarios WHERE rol = 'vendedor' AND activo = 1`
+    );
+
+    const [[conversion]] = await pool.query(
+      `SELECT
+         COUNT(*) AS total_visitas,
+         SUM(CASE WHEN resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS total_ventas
+       FROM visitas
+       WHERE YEAR(fecha) = YEAR(CURDATE()) AND MONTH(fecha) = MONTH(CURDATE())`
+    );
+    const conversionPromedio =
+      conversion.total_visitas > 0
+        ? Math.round((conversion.total_ventas / conversion.total_visitas) * 100)
+        : 0;
+
+    const [ventasPorSemana] = await pool.query(
+      `SELECT WEEK(ve.fecha, 3) AS semana, COALESCE(SUM(ve.monto), 0) AS monto
+       FROM ventas ve
+       WHERE YEAR(ve.fecha) = YEAR(CURDATE()) AND MONTH(ve.fecha) = MONTH(CURDATE())
+       GROUP BY semana
+       ORDER BY semana`
+    );
+
+    const [coberturaPorZona] = await pool.query(
+      `SELECT z.nombre AS zona, z.distrito,
+              COUNT(l.id) AS total_leads,
+              SUM(CASE WHEN l.estado IN ('contactado', 'vendido', 'descartado') THEN 1 ELSE 0 END) AS trabajados
+       FROM zonas z
+       LEFT JOIN leads l ON l.zona_id = z.id
+       GROUP BY z.id`
+    );
+    const cobertura = coberturaPorZona.map((z) => ({
+      zona: z.zona,
+      distrito: z.distrito,
+      total_leads: z.total_leads,
+      trabajados: z.trabajados || 0,
+      porcentaje: z.total_leads > 0 ? Math.round(((z.trabajados || 0) / z.total_leads) * 100) : 0,
+    }));
+
+    const [ranking] = await pool.query(
+      `SELECT u.nombre AS vendedor, z.nombre AS zona,
+              COALESCE(SUM(ve.monto), 0) AS ventas_monto,
+              COUNT(DISTINCT v.id) AS total_visitas,
+              SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS total_ventas
+       FROM usuarios u
+       LEFT JOIN zonas z ON z.id = u.zona_id
+       LEFT JOIN visitas v ON v.vendedor_id = u.id
+         AND YEAR(v.fecha) = YEAR(CURDATE()) AND MONTH(v.fecha) = MONTH(CURDATE())
+       LEFT JOIN ventas ve ON ve.visita_id = v.id
+       WHERE u.rol = 'vendedor' AND u.activo = 1
+       GROUP BY u.id
+       ORDER BY ventas_monto DESC
+       LIMIT 10`
+    );
+    const rankingConConversion = ranking.map((r) => ({
+      vendedor: r.vendedor,
+      zona: r.zona,
+      ventas_monto: r.ventas_monto,
+      conversion_pct: r.total_visitas > 0 ? Math.round((r.total_ventas / r.total_visitas) * 100) : 0,
+    }));
+
+    res.json({
+      ventas_mes: resumen.ventas_mes,
+      leads_convertidos_mes: resumen.leads_convertidos_mes,
+      vendedores_activos_hoy: activosHoy.total,
+      total_vendedores: totalVendedores.total,
+      conversion_promedio_pct: conversionPromedio,
+      ventas_por_semana: ventasPorSemana,
+      cobertura_por_zona: cobertura,
+      ranking_vendedores: rankingConConversion,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al calcular el dashboard" });
+  }
+}
+
+/**
+ * Serie diaria del mes vigente: cantidad de visitas y de ventas por cada
+ * dia del mes (desde el dia 1 hasta hoy), para graficar barras (visitas)
+ * y linea (ventas) en el dashboard.
+ */
+async function serieDiariaMes(req, res) {
+  try {
+    const [visitasPorDia] = await pool.query(
+      `SELECT DAY(fecha) AS dia, COUNT(*) AS total
+       FROM visitas
+       WHERE YEAR(fecha) = YEAR(CURDATE()) AND MONTH(fecha) = MONTH(CURDATE())
+       GROUP BY DAY(fecha)`
+    );
+    const [ventasPorDia] = await pool.query(
+      `SELECT DAY(ve.fecha) AS dia, COUNT(*) AS total
+       FROM ventas ve
+       WHERE YEAR(ve.fecha) = YEAR(CURDATE()) AND MONTH(ve.fecha) = MONTH(CURDATE())
+       GROUP BY DAY(ve.fecha)`
+    );
+
+    const mapaVisitas = Object.fromEntries(visitasPorDia.map((v) => [v.dia, v.total]));
+    const mapaVentas = Object.fromEntries(ventasPorDia.map((v) => [v.dia, v.total]));
+
+    const hoy = new Date();
+    const diaActual = hoy.getDate();
+
+    const serie = [];
+    for (let dia = 1; dia <= diaActual; dia++) {
+      serie.push({
+        dia,
+        visitas: mapaVisitas[dia] || 0,
+        ventas: mapaVentas[dia] || 0,
+      });
+    }
+
+    res.json(serie);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al calcular la serie diaria" });
+  }
+}
+
+/**
+ * Dashboard del supervisor: igual de espiritu que el del admin, pero
+ * limitado SOLO a los vendedores que el admin le habilito via
+ * permisos_supervisor (por zona completa o por vendedor especifico),
+ * y solo si ese permiso tiene puede_ver_kpis = 1.
+ */
+async function dashboardSupervisor(req, res) {
+  const supervisorId = req.usuario.id;
+
+  try {
+    const [permisos] = await pool.query(
+      `SELECT zona_id, vendedor_id FROM permisos_supervisor
+       WHERE supervisor_id = ? AND puede_ver_kpis = 1`,
+      [supervisorId]
+    );
+
+    if (permisos.length === 0) {
+      return res.status(403).json({
+        error: "No tienes permisos de visibilidad otorgados todavia. Pide al administrador que te habilite acceso a una zona o vendedor.",
+      });
+    }
+
+    const zonaIds = permisos.filter((p) => p.zona_id).map((p) => p.zona_id);
+    const vendedorIdsDirectos = permisos.filter((p) => p.vendedor_id).map((p) => p.vendedor_id);
+
+    // Construye el set de vendedores visibles: los de las zonas otorgadas + los otorgados individualmente
+    const condiciones = [];
+    const valores = [];
+    if (zonaIds.length > 0) {
+      condiciones.push(`zona_id IN (${zonaIds.map(() => "?").join(",")})`);
+      valores.push(...zonaIds);
+    }
+    if (vendedorIdsDirectos.length > 0) {
+      condiciones.push(`id IN (${vendedorIdsDirectos.map(() => "?").join(",")})`);
+      valores.push(...vendedorIdsDirectos);
+    }
+
+    const [vendedoresVisibles] = await pool.query(
+      `SELECT id, nombre FROM usuarios WHERE rol = 'vendedor' AND (${condiciones.join(" OR ")})`,
+      valores
+    );
+
+    if (vendedoresVisibles.length === 0) {
+      return res.json({ vendedores_visibles: [], ventas_mes: 0, ranking_vendedores: [] });
+    }
+
+    const idsVisibles = vendedoresVisibles.map((v) => v.id);
+    const placeholders = idsVisibles.map(() => "?").join(",");
+
+    const [[resumen]] = await pool.query(
+      `SELECT COALESCE(SUM(ve.monto), 0) AS ventas_mes, COUNT(DISTINCT ve.id) AS leads_convertidos_mes
+       FROM ventas ve
+       JOIN visitas v ON v.id = ve.visita_id
+       WHERE v.vendedor_id IN (${placeholders})
+         AND YEAR(ve.fecha) = YEAR(CURDATE()) AND MONTH(ve.fecha) = MONTH(CURDATE())`,
+      idsVisibles
+    );
+
+    const [ranking] = await pool.query(
+      `SELECT u.nombre AS vendedor,
+              COALESCE(SUM(ve.monto), 0) AS ventas_monto,
+              COUNT(DISTINCT v.id) AS total_visitas,
+              SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS total_ventas
+       FROM usuarios u
+       LEFT JOIN visitas v ON v.vendedor_id = u.id
+         AND YEAR(v.fecha) = YEAR(CURDATE()) AND MONTH(v.fecha) = MONTH(CURDATE())
+       LEFT JOIN ventas ve ON ve.visita_id = v.id
+       WHERE u.id IN (${placeholders})
+       GROUP BY u.id
+       ORDER BY ventas_monto DESC`,
+      idsVisibles
+    );
+
+    res.json({
+      vendedores_visibles: vendedoresVisibles,
+      ventas_mes: resumen.ventas_mes,
+      leads_convertidos_mes: resumen.leads_convertidos_mes,
+      ranking_vendedores: ranking.map((r) => ({
+        vendedor: r.vendedor,
+        ventas_monto: r.ventas_monto,
+        conversion_pct: r.total_visitas > 0 ? Math.round((r.total_ventas / r.total_visitas) * 100) : 0,
+      })),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al calcular el dashboard del supervisor" });
+  }
+}
+
+/**
+ * Ranking de los mejores vendedores del mes para motivacion (Gamificacion).
+ */
+async function rankingVendedores(req, res) {
+  try {
+    const [ranking] = await pool.query(
+      `SELECT u.nombre AS vendedor, z.nombre AS zona,
+              COALESCE(SUM(ve.monto), 0) AS ventas_monto,
+              COUNT(DISTINCT ve.id) AS total_ventas
+       FROM usuarios u
+       LEFT JOIN zonas z ON z.id = u.zona_id
+       LEFT JOIN visitas v ON v.vendedor_id = u.id
+         AND YEAR(v.fecha) = YEAR(CURDATE()) AND MONTH(v.fecha) = MONTH(CURDATE())
+       LEFT JOIN ventas ve ON ve.visita_id = v.id
+       WHERE u.rol = 'vendedor' AND u.activo = 1
+       GROUP BY u.id
+       ORDER BY total_ventas DESC, ventas_monto DESC
+       LIMIT 10`
+    );
+    res.json(ranking);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener el ranking" });
+  }
+}
+
+/**
+ * KPIs de uso y rendimiento de la base de datos (cartera).
+ */
+async function kpisBase(req, res) {
+  const { carga_id } = req.query;
+  const whereCarga = carga_id ? `WHERE lb.carga_id = ${Number(carga_id)}` : "";
+
+  try {
+    // 1. Total registros (DISTINCT para evitar duplicidad por visitas), contactabilidad y libres
+    const [[stats]] = await pool.query(
+      `SELECT
+         COUNT(DISTINCT l.id) as total,
+         COUNT(DISTINCT CASE WHEN v.id IS NOT NULL THEN l.id END) as contactados,
+         COUNT(DISTINCT CASE WHEN v.resultado = 'venta_cerrada' THEN l.id END) as ventas,
+         COUNT(DISTINCT CASE WHEN l.vendedor_id IS NULL THEN l.id END) as libres
+       FROM leads l
+       JOIN leads_base lb ON lb.id = l.lead_base_id
+       LEFT JOIN visitas v ON v.lead_id = l.id
+       ${whereCarga}`
+    );
+
+    // 2. Total de visitas para calcular vueltas (turns)
+    const [[visitas]] = await pool.query(
+      `SELECT COUNT(*) as total_visitas
+       FROM visitas v
+       JOIN leads l ON l.id = v.lead_id
+       JOIN leads_base lb ON lb.id = l.lead_base_id
+       ${whereCarga}`
+    );
+
+    const contactabilidad = stats.total > 0 ? Math.round((stats.contactados / stats.total) * 100) : 0;
+    const efectividad = stats.contactados > 0 ? Math.round((stats.ventas / stats.contactados) * 100) : 0;
+    const vueltas = stats.contactados > 0 ? (visitas.total_visitas / stats.contactados).toFixed(1) : "0.0";
+
+    res.json({
+      total_registros: stats.total,
+      contactados: stats.contactados,
+      libres: stats.libres || 0,
+      contactabilidad_pct: contactabilidad,
+      efectividad_pct: efectividad,
+      vueltas_base: vueltas
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al calcular KPIs de base" });
+  }
+}
+
+module.exports = { kpisVendedor, dashboardAdmin, serieDiariaMes, dashboardSupervisor, rankingVendedores, kpisBase };

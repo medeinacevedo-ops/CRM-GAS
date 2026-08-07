@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM Ventas de Campo — Panel Administrador</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+
+  <!-- ===================== LOGIN ===================== -->
+  <section id="vista-login" class="vista-login">
+    <div class="login-card">
+      <p class="login-eyebrow">CRM Ventas de Campo</p>
+      <h1>Panel de administrador</h1>
+      <form id="form-login">
+        <label for="email">Correo</label>
+        <input type="email" id="email" required placeholder="admin@empresa.com">
+        <label for="password">Contraseña</label>
+        <input type="password" id="password" required placeholder="••••••••">
+        <button type="submit">Ingresar</button>
+        <p id="login-error" class="mensaje-error"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===================== APP ===================== -->
+  <div id="vista-app" class="app oculto">
+
+    <!-- Campana de notificaciones: fija arriba a la derecha, no interfiere con el layout -->
+    <div id="notif-campana-wrap" class="notif-campana-wrap">
+      <button id="notif-campana-btn" class="notif-campana-btn" aria-label="Notificaciones">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 4.5 1.5 6 2 7H4c.5-1 2-2.5 2-7Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+        <span id="notif-badge" class="notif-badge oculto">0</span>
+      </button>
+
+      <div id="notif-dropdown" class="notif-dropdown oculto">
+        <div class="notif-dropdown-header">
+          <span>Notificaciones</span>
+        </div>
+        <div id="notif-lista" class="notif-lista">
+          <p class="notif-vacio">Cargando...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contenedor de toasts tipo Messenger, abajo a la derecha -->
+    <div id="notif-toast-contenedor" class="notif-toast-contenedor"></div>
+
+
+    <aside class="sidebar">
+      <p class="marca">CRM<span>·</span>Gas</p>
+      <nav>
+        <button class="nav-item nav-item-top activo" data-vista="dashboard">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          <span>Dashboard</span>
+        </button>
+
+        <div class="nav-grupo" data-grupo="base">
+          <button class="nav-grupo-header">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+            <span>Gestión de base</span>
+            <svg class="nav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+          <div class="nav-grupo-items">
+            <button class="nav-item" data-vista="cargar">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m6 10 6-6 6 6"/><path d="M4 20h16"/></svg>
+              <span>Cargar base</span>
+            </button>
+            <button class="nav-item" data-vista="historial">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 7v5l3 3"/></svg>
+              <span>Historial de cargas</span>
+            </button>
+            <button class="nav-item" data-vista="operativos">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>
+              <span>Generar operativos</span>
+            </button>
+            <button class="nav-item" data-vista="reparto">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.6 15.4 6.4"/><path d="M8.6 13.4 15.4 17.6"/></svg>
+              <span>Reparto automático</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="nav-grupo" data-grupo="personal">
+          <button class="nav-grupo-header">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Gestión de personal</span>
+            <svg class="nav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+          <div class="nav-grupo-items">
+            <button class="nav-item" data-vista="usuarios">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+              <span>Usuarios</span>
+            </button>
+            <button class="nav-item" data-vista="zonas">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+              <span>Zonas</span>
+            </button>
+            <button class="nav-item" data-vista="pausas">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="10" y1="9" x2="10" y2="15"/><line x1="14" y1="9" x2="14" y2="15"/></svg>
+              <span>Catálogo de pausas</span>
+            </button>
+            <button class="nav-item" data-vista="permisos">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.6 3.4 8.4 8 9 4.6-.6 8-4.4 8-9V6l-8-3Z"/><path d="m9.5 12 1.8 1.8L14.5 10"/></svg>
+              <span>Permisos de supervisor</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="nav-grupo" data-grupo="reportes">
+          <button class="nav-grupo-header">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6a1 1 0 0 1 1 1v1H8V4a1 1 0 0 1 1-1Z"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>
+            <span>Reportes y actividad</span>
+            <svg class="nav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+          <div class="nav-grupo-items">
+            <button class="nav-item" data-vista="visitas">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M21 12v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/></svg>
+              <span>Historial de visitas</span>
+            </button>
+            <button class="nav-item" data-vista="ubicacion">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+              <span>Historial de ubicación</span>
+            </button>
+            <button class="nav-item" data-vista="intercambios">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+              <span>Intercambios de leads</span>
+            </button>
+          </div>
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <p id="usuario-nombre"></p>
+        <button id="btn-logout">Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <main class="contenido">
+
+      <!-- Dashboard -->
+      <section id="panel-dashboard" class="panel">
+        <div class="panel-header">
+          <h2>Resumen general</h2>
+          <button id="btn-refrescar-dashboard" class="btn-secundario">Actualizar</button>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <p class="kpi-label">Ventas del mes</p>
+            <p class="kpi-valor" id="kpi-ventas-mes">—</p>
+          </div>
+          <div class="kpi-card">
+            <p class="kpi-label">Leads convertidos</p>
+            <p class="kpi-valor" id="kpi-convertidos">—</p>
+          </div>
+          <div class="kpi-card">
+            <p class="kpi-label">Vendedores activos hoy</p>
+            <p class="kpi-valor" id="kpi-activos">—</p>
+          </div>
+          <div class="kpi-card">
+            <p class="kpi-label">Conversión promedio</p>
+            <p class="kpi-valor" id="kpi-conversion">—</p>
+          </div>
+        </div>
+
+        <div class="dash-cols">
+          <div class="dash-col">
+            <p class="seccion-titulo">Cobertura por zona</p>
+            <div id="cobertura-lista"></div>
+          </div>
+          <div class="dash-col">
+            <p class="seccion-titulo">Ventas por semana</p>
+            <table class="tabla" id="tabla-ventas-semana">
+              <thead><tr><th>Semana</th><th>Monto</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <p class="seccion-titulo" style="margin-top:24px;">Visitas y ventas por día del mes</p>
+        <div class="grafico-card">
+          <div style="position:relative; height:280px;">
+            <canvas id="graficoDiario"></canvas>
+          </div>
+        </div>
+
+        <p class="seccion-titulo" style="margin-top:24px;">Ranking de vendedores</p>
+        <table class="tabla">
+          <thead><tr><th>#</th><th>Vendedor</th><th>Zona</th><th>Ventas</th><th>Conversión</th></tr></thead>
+          <tbody id="tabla-ranking"></tbody>
+        </table>
+      </section>
+
+      <!-- Cargar base -->
+      <section id="panel-cargar" class="panel oculto">
+        <h2>Cargar base de clientes</h2>
+        <p class="descripcion">Sube un archivo CSV con las columnas: <code>nombre,telefono,direccion,lat,lng,distrito</code>. Esta base queda guardada como historial y no se modifica luego.</p>
+        <form id="form-cargar">
+          <input type="file" id="archivo-csv" accept=".csv" required>
+          <button type="submit">Subir archivo</button>
+        </form>
+        <p id="cargar-mensaje" class="mensaje"></p>
+      </section>
+
+      <!-- Historial -->
+      <section id="panel-historial" class="panel oculto">
+        <div class="panel-header">
+          <h2>Historial de cargas</h2>
+          <button id="btn-refrescar-historial" class="btn-secundario">Actualizar</button>
+        </div>
+        <table class="tabla">
+          <thead>
+            <tr><th>ID</th><th>Archivo</th><th>Registros</th><th>Estado</th><th>Cargado por</th><th>Fecha</th></tr>
+          </thead>
+          <tbody id="tabla-historial"></tbody>
+        </table>
+      </section>
+
+      <!-- Generar operativos -->
+      <section id="panel-operativos" class="panel oculto">
+        <h2>Generar operativos</h2>
+        <p class="descripcion">Selecciona una base cargada, revisa cuántos leads tiene disponibles, y asígnalos individualmente a los vendedores de cada zona.</p>
+
+        <div class="paso-op">
+          <label for="op-select-base">1. Selecciona la base</label>
+          <select id="op-select-base"><option value="">Cargando cargas...</option></select>
+        </div>
+
+        <div id="op-tarjeta-resumen" class="tarjeta-resumen-op oculto">
+          <div class="resumen-op-item">
+            <p class="resumen-op-label">Total de leads</p>
+            <p class="resumen-op-valor" id="op-total-leads">—</p>
+          </div>
+          <div class="resumen-op-item">
+            <p class="resumen-op-label">Leads disponibles</p>
+            <p class="resumen-op-valor destacado" id="op-leads-disponibles">—</p>
+          </div>
+          <div class="resumen-op-item" id="op-sin-zona-wrap">
+            <p class="resumen-op-label">Sin zona coincidente</p>
+            <p class="resumen-op-valor alerta" id="op-sin-zona">—</p>
+          </div>
+        </div>
+
+        <div id="op-paso-zona" class="paso-op oculto">
+          <label for="op-select-zona">2. Selecciona la zona</label>
+          <select id="op-select-zona"><option value="">— Elige una zona —</option></select>
+        </div>
+
+        <div id="op-tabla-vendedores-wrap" class="oculto">
+          <p class="seccion-titulo" style="margin-top:20px;">3. Asigna a los vendedores de esta zona</p>
+          <p class="descripcion" id="op-disponibles-zona-texto"></p>
+          <table class="tabla">
+            <thead>
+              <tr><th>Vendedor</th><th>Cartera actual</th><th>Leads a asignar</th></tr>
+            </thead>
+            <tbody id="op-tabla-vendedores"></tbody>
+          </table>
+          <button id="op-btn-asignar" style="margin-top:14px;">Asignar leads</button>
+          <p id="op-mensaje-asignacion" class="mensaje"></p>
+        </div>
+      </section>
+
+      <!-- Reparto automático -->
+      <section id="panel-reparto" class="panel oculto">
+        <h2>Reparto automático de leads</h2>
+        <p class="descripcion">Selecciona una base, revisa el desglose por zona, y reparte parejo entre todos los vendedores activos de la zona elegida.</p>
+
+        <div class="paso-op">
+          <label for="rep-select-base">1. Selecciona la base</label>
+          <select id="rep-select-base"><option value="">Cargando cargas...</option></select>
+        </div>
+
+        <div id="rep-desglose-wrap" class="oculto">
+          <p class="seccion-titulo">Desglose por zona</p>
+          <table class="tabla">
+            <thead>
+              <tr><th>Zona</th><th>Distrito</th><th>Total leads</th><th>Disponibles</th><th>Vendedores activos</th></tr>
+            </thead>
+            <tbody id="rep-tabla-desglose"></tbody>
+          </table>
+          <p id="rep-sin-zona-texto" class="mensaje error oculto"></p>
+        </div>
+
+        <div id="rep-paso-zona" class="paso-op oculto" style="margin-top:20px;">
+          <label for="rep-select-zona">2. Selecciona la zona a repartir</label>
+          <select id="rep-select-zona"><option value="">— Elige una zona —</option></select>
+          <button id="rep-btn-repartir" style="margin-top:14px;">Repartir parejo entre los vendedores de esta zona</button>
+        </div>
+
+        <p id="reparto-mensaje" class="mensaje"></p>
+        <div id="reparto-resumen"></div>
+      </section>
+
+      <!-- Usuarios -->
+      <section id="panel-usuarios" class="panel oculto">
+        <div class="panel-header">
+          <h2>Usuarios</h2>
+          <button id="btn-nuevo-usuario" class="btn-secundario">+ Nuevo usuario</button>
+        </div>
+
+        <div class="filtros-usuarios">
+          <input type="text" id="buscar-usuarios" placeholder="Buscar por nombre o email...">
+          <select id="filtro-rol-usuarios">
+            <option value="">Todos los roles</option>
+            <option value="vendedor">Vendedor</option>
+            <option value="supervisor">Supervisor</option>
+            <option value="admin">Administrador</option>
+          </select>
+          <span id="contador-usuarios" class="contador-usuarios"></span>
+        </div>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Zona</th><th>Cartera</th><th>Activo</th><th>Acciones</th></tr>
+          </thead>
+          <tbody id="tabla-usuarios"></tbody>
+        </table>
+
+        <!-- Modal simple de crear/editar -->
+        <div id="modal-usuario" class="modal oculto">
+          <div class="modal-card">
+            <h3 id="modal-usuario-titulo">Nuevo usuario</h3>
+            <form id="form-usuario">
+              <input type="hidden" id="usuario-id">
+              <label for="usuario-nombre-input">Nombre completo</label>
+              <input type="text" id="usuario-nombre-input" required>
+
+              <label for="usuario-email-input">Email</label>
+              <input type="email" id="usuario-email-input" required>
+
+              <label for="usuario-telefono-input">Teléfono</label>
+              <input type="text" id="usuario-telefono-input">
+
+              <label for="usuario-rol-input">Rol</label>
+              <select id="usuario-rol-input" required>
+                <option value="vendedor">Vendedor</option>
+                <option value="supervisor">Supervisor</option>
+                <option value="admin">Administrador</option>
+              </select>
+
+              <label for="usuario-zona-input">Zona</label>
+              <select id="usuario-zona-input"><option value="">— Sin zona —</option></select>
+
+              <div id="campo-password">
+                <label for="usuario-password-input">Contraseña (mínimo 8 caracteres)</label>
+                <input type="text" id="usuario-password-input">
+              </div>
+
+              <label class="label-checkbox">
+                <input type="checkbox" id="usuario-activo-input" checked> Usuario activo
+              </label>
+
+              <div class="modal-acciones">
+                <button type="button" id="btn-cancelar-usuario" class="btn-secundario">Cancelar</button>
+                <button type="submit">Guardar</button>
+              </div>
+            </form>
+            <p id="usuario-mensaje" class="mensaje"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Catálogo de pausas -->
+      <section id="panel-pausas" class="panel oculto">
+        <div class="panel-header">
+          <h2>Catálogo de pausas</h2>
+          <button id="btn-nueva-pausa" class="btn-secundario">+ Nuevo motivo</button>
+        </div>
+        <p class="descripcion">
+          <strong>Desconexiones</strong>: interrupciones cortas del control operativo normal (baño, coaching, capacitación).
+          <strong>Reductores</strong>: ausencias que se contabilizan aparte (ej. descanso médico).
+        </p>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>Motivo</th><th>Tipo</th><th>Tiempo máx.</th><th>Activo</th><th>Acciones</th></tr>
+          </thead>
+          <tbody id="tabla-pausas"></tbody>
+        </table>
+
+        <!-- Modal crear/editar motivo -->
+        <div id="modal-pausa" class="modal oculto">
+          <div class="modal-card">
+            <h3 id="modal-pausa-titulo">Nuevo motivo</h3>
+            <form id="form-pausa">
+              <input type="hidden" id="pausa-id">
+              <label for="pausa-nombre-input">Nombre del motivo</label>
+              <input type="text" id="pausa-nombre-input" required placeholder="Ej. Reunión de equipo">
+
+              <label for="pausa-tipo-input">Tipo</label>
+              <select id="pausa-tipo-input" required>
+                <option value="desconexion">Desconexión</option>
+                <option value="reductor">Reductor</option>
+              </select>
+
+              <label for="pausa-tiempo-input">Tiempo máximo (minutos, opcional)</label>
+              <input type="number" id="pausa-tiempo-input" min="1" placeholder="Ej. 15">
+
+              <div class="modal-acciones">
+                <button type="button" id="btn-cancelar-pausa" class="btn-secundario">Cancelar</button>
+                <button type="submit">Guardar</button>
+              </div>
+            </form>
+            <p id="pausa-mensaje" class="mensaje"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Intercambios de leads (solo lectura) -->
+      <section id="panel-intercambios" class="panel oculto">
+        <div class="panel-header">
+          <h2>Intercambios de leads</h2>
+          <button id="btn-refrescar-intercambios" class="btn-secundario">Actualizar</button>
+        </div>
+        <p class="descripcion">Vista de auditoría: los intercambios los proponen y confirman los propios vendedores desde su app. Aquí solo se visualizan, no se pueden aprobar ni cancelar desde el panel.</p>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>Vendedor origen</th><th>Vendedor destino</th><th>Cantidad</th><th>Estado</th><th>Fecha</th></tr>
+          </thead>
+          <tbody id="tabla-intercambios"></tbody>
+        </table>
+      </section>
+
+      <!-- Zonas -->
+      <section id="panel-zonas" class="panel oculto">
+        <div class="panel-header">
+          <h2>Zonas</h2>
+          <button id="btn-nueva-zona" class="btn-secundario">+ Nueva zona</button>
+        </div>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>Zona</th><th>Distrito</th><th>Vendedores</th><th>Leads totales</th><th>Activa</th><th>Acciones</th></tr>
+          </thead>
+          <tbody id="tabla-zonas"></tbody>
+        </table>
+
+        <!-- Modal crear/editar zona -->
+        <div id="modal-zona" class="modal oculto">
+          <div class="modal-card">
+            <h3 id="modal-zona-titulo">Nueva zona</h3>
+            <form id="form-zona">
+              <input type="hidden" id="zona-id">
+              <label for="zona-nombre-input">Nombre de la zona</label>
+              <input type="text" id="zona-nombre-input" required placeholder="Ej. Zona Los Olivos">
+
+              <label for="zona-departamento-input">Departamento</label>
+              <select id="zona-departamento-input" required><option value="">Cargando...</option></select>
+
+              <label for="zona-provincia-input">Provincia</label>
+              <select id="zona-provincia-input" required disabled><option value="">— Elige un departamento primero —</option></select>
+
+              <label for="zona-distrito-input">Distrito</label>
+              <select id="zona-distrito-input" required disabled><option value="">— Elige una provincia primero —</option></select>
+              <p class="ayuda-campo">El distrito se toma del ubigeo oficial del Perú, así se evitan errores de tipeo al emparejar con el CSV de leads.</p>
+
+              <div class="modal-acciones">
+                <button type="button" id="btn-cancelar-zona" class="btn-secundario">Cancelar</button>
+                <button type="submit">Guardar</button>
+              </div>
+            </form>
+            <p id="zona-mensaje" class="mensaje"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Historial de visitas -->
+      <section id="panel-visitas" class="panel oculto">
+        <div class="panel-header">
+          <h2>Historial de visitas</h2>
+          <button id="btn-refrescar-visitas" class="btn-secundario">Actualizar</button>
+        </div>
+
+        <div class="filtros-visitas">
+          <select id="filtro-visitas-vendedor"><option value="">Todos los vendedores</option></select>
+          <select id="filtro-visitas-zona"><option value="">Todas las zonas</option></select>
+          <select id="filtro-visitas-resultado">
+            <option value="">Todos los resultados</option>
+            <option value="venta_cerrada">Venta cerrada</option>
+            <option value="no_interesado">No interesado</option>
+            <option value="reagendar">Reagendar</option>
+            <option value="no_ubicado">No ubicado</option>
+          </select>
+          <input type="date" id="filtro-visitas-desde" title="Desde">
+          <input type="date" id="filtro-visitas-hasta" title="Hasta">
+          <button id="btn-aplicar-filtros-visitas" class="btn-secundario">Filtrar</button>
+        </div>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>Fecha</th><th>Vendedor</th><th>Cliente</th><th>Zona</th><th>Resultado</th><th>Producto</th><th>Monto</th></tr>
+          </thead>
+          <tbody id="tabla-visitas"></tbody>
+        </table>
+
+        <div class="paginacion">
+          <button id="btn-pagina-anterior" class="btn-secundario">← Anterior</button>
+          <span id="info-paginacion"></span>
+          <button id="btn-pagina-siguiente" class="btn-secundario">Siguiente →</button>
+        </div>
+      </section>
+
+      <!-- Permisos de supervisor -->
+      <section id="panel-permisos" class="panel oculto">
+        <div class="panel-header">
+          <h2>Permisos de supervisor</h2>
+          <button id="btn-nuevo-permiso" class="btn-secundario">+ Otorgar permiso</button>
+        </div>
+        <p class="descripcion">Cada permiso le da a un supervisor visibilidad sobre <strong>una zona completa</strong> o <strong>un vendedor específico</strong>. Un supervisor sin ningún permiso otorgado no ve nada.</p>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>Supervisor</th><th>Alcance</th><th>Ve KPIs</th><th>Ve ubicación</th><th>Otorgado por</th><th></th></tr>
+          </thead>
+          <tbody id="tabla-permisos"></tbody>
+        </table>
+
+        <!-- Modal otorgar permiso -->
+        <div id="modal-permiso" class="modal oculto">
+          <div class="modal-card">
+            <h3>Otorgar permiso</h3>
+            <form id="form-permiso">
+              <label for="permiso-supervisor-input">Supervisor</label>
+              <select id="permiso-supervisor-input" required><option value="">Cargando...</option></select>
+
+              <label for="permiso-alcance-tipo">Alcance</label>
+              <select id="permiso-alcance-tipo" required>
+                <option value="zona">Una zona completa</option>
+                <option value="vendedor">Un vendedor específico</option>
+              </select>
+
+              <div id="campo-permiso-zona">
+                <label for="permiso-zona-input">Zona</label>
+                <select id="permiso-zona-input"><option value="">Cargando...</option></select>
+              </div>
+              <div id="campo-permiso-vendedor" class="oculto">
+                <label for="permiso-vendedor-input">Vendedor</label>
+                <select id="permiso-vendedor-input"><option value="">Cargando...</option></select>
+              </div>
+
+              <label class="label-checkbox">
+                <input type="checkbox" id="permiso-kpis-input" checked> Puede ver KPIs y ventas
+              </label>
+              <label class="label-checkbox">
+                <input type="checkbox" id="permiso-ubicacion-input"> Puede ver historial de ubicación
+              </label>
+
+              <div class="modal-acciones">
+                <button type="button" id="btn-cancelar-permiso" class="btn-secundario">Cancelar</button>
+                <button type="submit">Otorgar</button>
+              </div>
+            </form>
+            <p id="permiso-mensaje" class="mensaje"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Historial de ubicación -->
+      <section id="panel-ubicacion" class="panel oculto">
+        <div class="panel-header">
+          <h2>Historial de ubicación</h2>
+          <button id="btn-refrescar-ubicacion" class="btn-secundario">Actualizar</button>
+        </div>
+        <p class="descripcion">Reconstrucción del recorrido por eventos puntuales (ingreso, cada visita, pausas, salida) — no es rastreo en vivo, por diseño, para ahorrar batería del celular del vendedor.</p>
+
+        <div class="filtros-visitas">
+          <select id="filtro-ubicacion-vendedor"><option value="">Todos los vendedores</option></select>
+          <select id="filtro-ubicacion-tipo">
+            <option value="">Todos los eventos</option>
+            <option value="ingreso">Ingreso</option>
+            <option value="visita">Visita</option>
+            <option value="break_inicio">Inicio de pausa</option>
+            <option value="break_fin">Fin de pausa</option>
+            <option value="heartbeat">Heartbeat</option>
+            <option value="salida">Salida</option>
+          </select>
+          <input type="date" id="filtro-ubicacion-fecha" title="Fecha">
+          <button id="btn-aplicar-filtros-ubicacion" class="btn-secundario">Filtrar</button>
+        </div>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>Hora</th><th>Vendedor</th><th>Evento</th><th>Cliente</th><th>Coordenadas</th><th></th></tr>
+          </thead>
+          <tbody id="tabla-ubicacion"></tbody>
+        </table>
+
+        <div class="paginacion">
+          <button id="btn-ubicacion-pagina-anterior" class="btn-secundario">← Anterior</button>
+          <span id="info-paginacion-ubicacion"></span>
+          <button id="btn-ubicacion-pagina-siguiente" class="btn-secundario">Siguiente →</button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
