@@ -1,4 +1,7 @@
-const API_URL = "http://localhost:3000/api";
+// Si estamos en local (localhost) usamos el puerto 3000, si no, la URL de Render
+const API_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:3000/api"
+    : "https://crm-gas-backend-2aj8.onrender.com/api";
 
 let token = localStorage.getItem("crm_token") || null;
 let usuario = JSON.parse(localStorage.getItem("crm_usuario") || "null");
