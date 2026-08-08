@@ -12,7 +12,11 @@ async function login(req, res) {
 
   try {
     const [rows] = await pool.query(
-      "SELECT id, nombre, email, password_hash, rol, zona_id, activo, session_device_id FROM usuarios WHERE email = ?",
+      `SELECT u.id, u.nombre, u.email, u.password_hash, u.rol, u.zona_id, u.activo, u.session_device_id,
+              z.nombre AS zona_nombre, z.distrito
+       FROM usuarios u
+       LEFT JOIN zonas z ON z.id = u.zona_id
+       WHERE u.email = ?`,
       [email]
     );
 
@@ -71,6 +75,8 @@ async function login(req, res) {
         email: usuario.email,
         rol: usuario.rol,
         zona_id: usuario.zona_id,
+        zona_nombre: usuario.zona_nombre,
+        distrito: usuario.distrito
       },
     });
   } catch (err) {
