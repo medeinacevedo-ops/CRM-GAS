@@ -19,6 +19,7 @@ const ubigeoRoutes = require("./routes/ubigeo");
 const permisosSupervisorRoutes = require("./routes/permisosSupervisor");
 const checkpointsRoutes = require("./routes/checkpoints");
 const notificacionesRoutes = require("./routes/notificaciones");
+const ubicacionRoutes = require("./routes/ubicacion");
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use("/api/ubigeo", ubigeoRoutes);
 app.use("/api/permisos-supervisor", permisosSupervisorRoutes);
 app.use("/api/checkpoints", checkpointsRoutes);
 app.use("/api/notificaciones", notificacionesRoutes);
+app.use("/api/ubicacion", ubicacionRoutes);
 
 // Manejo de errores no controlados
 app.use((err, req, res, next) => {

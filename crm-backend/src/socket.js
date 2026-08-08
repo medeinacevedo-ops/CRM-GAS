@@ -24,6 +24,17 @@ module.exports = {
         }
       });
 
+      // Sala compartida para el mapa de seguimiento en vivo (admin/supervisor).
+      // Se une explicitamente al abrir esa pantalla, para no recibir
+      // heartbeats de todos los vendedores en clientes que no la usan.
+      socket.on("join_monitoreo", () => {
+        socket.join("monitoreo_ubicacion");
+      });
+
+      socket.on("leave_monitoreo", () => {
+        socket.leave("monitoreo_ubicacion");
+      });
+
       socket.on("disconnect", (reason) => {
         console.log(`[Socket] Cliente desconectado: ${socket.id}. Motivo: ${reason}`);
       });

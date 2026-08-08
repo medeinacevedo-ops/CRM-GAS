@@ -107,4 +107,4 @@ async function listarCheckpoints(req, res) {
   }
 }
 
-module.exports = { listarCheckpoints };
+module.exports = { listarCheckpoints, resolverVendedoresVisibles };
