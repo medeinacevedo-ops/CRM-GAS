@@ -1074,7 +1074,7 @@ async function cargarDepartamentos() {
       `<option value="">— Elige un departamento —</option>` +
       departamentos.map((d) => `<option value="${d}">${d}</option>`).join("");
   } catch (err) {
-    select.innerHTML = `<option value="">Error al cargar</option>`;
+    select.innerHTML = `<option value="">Error: ${err.message}</option>`;
     console.error("Error al cargar departamentos:", err.message);
   }
 }
@@ -1094,7 +1094,7 @@ async function cargarProvincias(departamento) {
       provincias.map((p) => `<option value="${p}">${p}</option>`).join("");
     select.disabled = false;
   } catch (err) {
-    select.innerHTML = `<option value="">Error al cargar</option>`;
+    select.innerHTML = `<option value="">Error: ${err.message}</option>`;
     console.error("Error al cargar provincias:", err.message);
   }
 }
@@ -1116,7 +1116,7 @@ async function cargarDistritos(departamento, provincia) {
       distritos.map((d) => `<option value="${d}">${d}</option>`).join("");
     select.disabled = false;
   } catch (err) {
-    select.innerHTML = `<option value="">Error al cargar</option>`;
+    select.innerHTML = `<option value="">Error: ${err.message}</option>`;
     console.error("Error al cargar distritos:", err.message);
   }
 }

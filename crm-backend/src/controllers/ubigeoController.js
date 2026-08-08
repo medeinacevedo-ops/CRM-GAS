@@ -47,7 +47,7 @@ async function listarDistritos(req, res) {
 
   try {
     const [rows] = await pool.query(
-      `SELECT NOMBDIST AS distrito FROM ubigeo WHERE NOMBDEP = ? AND NOMBPROV = ? ORDER BY NOMBDIST`,
+      `SELECT DISTINCT NOMBDIST AS distrito FROM ubigeo WHERE NOMBDEP = ? AND NOMBPROV = ? ORDER BY NOMBDIST`,
       [departamento, provincia]
     );
     res.json(rows.map((r) => r.distrito));
