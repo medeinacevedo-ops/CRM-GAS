@@ -182,9 +182,11 @@ async function repartirAutomatico(req, res) {
 
 async function misLeads(req, res) {
   const [rows] = await pool.query(
-    `SELECT l.id, lb.nombre, lb.telefono, lb.direccion, lb.lat, lb.lng, l.estado,
+    `SELECT l.id, lb.nombre, lb.telefono, lb.direccion, lb.lat, lb.lng, l.estado, z.nombre as zona_nombre,
             (SELECT COUNT(*) FROM visitas v WHERE v.lead_id = l.id AND DATE(v.fecha) = DATE(NOW())) as visitado_hoy
-     FROM leads l JOIN leads_base lb ON lb.id = l.lead_base_id
+     FROM leads l
+     JOIN leads_base lb ON lb.id = l.lead_base_id
+     JOIN zonas z ON z.id = l.zona_id
      WHERE l.vendedor_id = ? AND l.estado IN ('asignado', 'contactado', 'vendido')
      ORDER BY l.fecha_asignacion DESC`,
     [req.usuario.id]
