@@ -182,7 +182,7 @@ async function repartirAutomatico(req, res) {
 
 async function misLeads(req, res) {
   const [rows] = await pool.query(
-    `SELECT l.id, lb.nombre, lb.telefono, lb.direccion, lb.lat, lb.lng, l.estado, z.nombre as zona_nombre,
+    `SELECT l.id, lb.nombre, lb.telefono, lb.direccion, lb.lat, lb.lng, lb.distrito, l.estado, z.nombre as zona_nombre,
             (SELECT COUNT(*) FROM visitas v WHERE v.lead_id = l.id AND DATE(v.fecha) = DATE(NOW())) as visitado_hoy
      FROM leads l
      JOIN leads_base lb ON lb.id = l.lead_base_id
@@ -302,12 +302,14 @@ async function actualizarLead(req, res) {
     if (!lead) return res.status(404).json({ error: "Lead no encontrado o no autorizado" });
 
     // 2. Actualizar en leads_base (los datos del cliente)
+    // Usamos NULLIF para que si envían vacío no sobreescriba si ya había dato,
+    // pero en este caso queremos que se actualice con lo que el usuario puso.
     await pool.query(
       `UPDATE leads_base SET
-         nombre = COALESCE(?, nombre),
-         telefono = COALESCE(?, telefono),
-         direccion = COALESCE(?, direccion),
-         distrito = COALESCE(?, distrito)
+         nombre = ?,
+         telefono = ?,
+         direccion = ?,
+         distrito = ?
        WHERE id = ?`,
       [nombre, telefono, direccion, distrito, lead.lead_base_id]
     );
