@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CRM Ventas de Campo — Panel Administrador</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 </head>
 <body>
 
@@ -566,6 +568,15 @@
           <button id="btn-refrescar-ubicacion" class="btn-secundario">Actualizar</button>
         </div>
         <p class="descripcion">Reconstrucción del recorrido por eventos puntuales (ingreso, cada visita, pausas, salida) — no es rastreo en vivo, por diseño, para ahorrar batería del celular del vendedor.</p>
+
+        <div class="mapa-vivo-card">
+          <div class="mapa-vivo-header">
+            <span class="mapa-vivo-titulo"><span id="mapa-vivo-punto" class="punto-vivo"></span>Mapa en vivo</span>
+            <span id="mapa-vivo-estado" class="mapa-vivo-estado">Conectando…</span>
+          </div>
+          <div id="mapa-ubicacion-vivo" class="mapa-ubicacion-vivo"></div>
+          <div id="lista-vivo" class="lista-vivo"></div>
+        </div>
 
         <div class="filtros-visitas">
           <select id="filtro-ubicacion-vendedor"><option value="">Todos los vendedores</option></select>

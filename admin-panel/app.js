@@ -70,6 +70,11 @@ document.getElementById("btn-logout").addEventListener("click", () => {
   vistaApp.classList.add("oculto");
   vistaLogin.classList.remove("oculto");
   detenerSocketNotificaciones();
+  if (mapaVivo) {
+    Object.values(marcadoresVivo).forEach((m) => mapaVivo.removeLayer(m));
+  }
+  ubicacionesVivo = {};
+  marcadoresVivo = {};
 });
 
 function mostrarApp() {
@@ -1481,6 +1486,7 @@ async function cargarPantallaUbicacion() {
   }
   paginaUbicacionActual = 1;
   cargarUbicacion();
+  iniciarMapaEnVivo();
 }
 
 async function inicializarFiltrosUbicacion() {
@@ -1489,6 +1495,7 @@ async function inicializarFiltrosUbicacion() {
     document.getElementById("filtro-ubicacion-vendedor").innerHTML =
       `<option value="">Todos los vendedores</option>` +
       usuarios.map((u) => `<option value="${u.id}">${u.nombre}</option>`).join("");
+    usuarios.forEach((u) => { nombresVendedores[u.id] = u.nombre; });
   } catch (err) {
     console.error("Error al cargar filtros de ubicación:", err.message);
   }
@@ -1557,6 +1564,139 @@ document.getElementById("btn-ubicacion-pagina-siguiente").addEventListener("clic
 });
 
 // ---------------------------------------------------------------------
+// MAPA EN VIVO (heartbeat de ubicación) — dentro del panel de ubicación
+// ---------------------------------------------------------------------
+let mapaVivo = null;
+let mapaVivoInicializado = false;
+let marcadoresVivo = {}; // vendedor_id -> L.CircleMarker
+let ubicacionesVivo = {}; // vendedor_id -> { nombre, lat, lng, hora }
+let nombresVendedores = {}; // vendedor_id -> nombre (se llena en inicializarFiltrosUbicacion)
+let barridoVivoIniciado = false;
+
+const CENTRO_MAPA_DEFECTO = [-12.0464, -77.0428]; // Lima, Perú
+const MINUTOS_INACTIVO_VIVO = 5; // pasado esto sin heartbeat, se retira del mapa
+
+async function iniciarMapaEnVivo() {
+  if (!mapaVivoInicializado) {
+    mapaVivo = L.map("mapa-ubicacion-vivo").setView(CENTRO_MAPA_DEFECTO, 11);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap",
+      maxZoom: 19,
+    }).addTo(mapaVivo);
+    mapaVivoInicializado = true;
+    iniciarBarridoVivo();
+  } else {
+    // El contenedor estuvo oculto (otro panel activo); Leaflet necesita
+    // recalcular su tamaño al volver a mostrarse o el mapa se ve cortado.
+    setTimeout(() => mapaVivo.invalidateSize(), 0);
+  }
+
+  const estadoEl = document.getElementById("mapa-vivo-estado");
+  try {
+    const data = await apiFetch("/ubicacion/en-vivo");
+    data.resultados.forEach((item) => {
+      actualizarPosicionVivo({
+        vendedor_id: item.vendedor_id,
+        nombre: item.vendedor,
+        lat: Number(item.lat),
+        lng: Number(item.lng),
+        hora: item.hora,
+      });
+    });
+    refrescarPanelVivo();
+  } catch (err) {
+    // Un supervisor sin permiso de ubicación otorgado recibe 403 — se
+    // muestra el mensaje del backend en vez de una tabla vacía confusa.
+    estadoEl.textContent = err.message;
+  }
+}
+
+// Alimentado tanto por la carga inicial (GET /ubicacion/en-vivo) como por
+// cada evento 'ubicacion:heartbeat' que llega por socket en tiempo real.
+function actualizarPosicionVivo({ vendedor_id, nombre, lat, lng, hora }) {
+  const nombreFinal = nombre || nombresVendedores[vendedor_id] || `Vendedor #${vendedor_id}`;
+  ubicacionesVivo[vendedor_id] = { nombre: nombreFinal, lat, lng, hora };
+
+  if (!mapaVivo) return; // aun no se abrio el panel de ubicación esta sesión
+
+  const popup = `<b>${nombreFinal}</b><br>${new Date(hora).toLocaleTimeString("es-PE")}`;
+  if (marcadoresVivo[vendedor_id]) {
+    marcadoresVivo[vendedor_id].setLatLng([lat, lng]).setPopupContent(popup);
+  } else {
+    marcadoresVivo[vendedor_id] = L.circleMarker([lat, lng], {
+      radius: 8,
+      color: "#2b7a78",
+      fillColor: "#2b7a78",
+      fillOpacity: 0.85,
+      weight: 2,
+    })
+      .addTo(mapaVivo)
+      .bindPopup(popup);
+  }
+}
+
+function refrescarPanelVivo() {
+  const total = Object.keys(ubicacionesVivo).length;
+  const punto = document.getElementById("mapa-vivo-punto");
+  const estado = document.getElementById("mapa-vivo-estado");
+  const lista = document.getElementById("lista-vivo");
+
+  punto.classList.toggle("activo", total > 0);
+  estado.textContent = total > 0
+    ? `${total} vendedor${total === 1 ? "" : "es"} en línea`
+    : "Sin vendedores conectados ahora mismo";
+
+  if (total === 0) {
+    lista.innerHTML = `<span class="lista-vivo-vacio">Aparecerán aquí cuando un vendedor con jornada activa envíe su ubicación.</span>`;
+    return;
+  }
+
+  lista.innerHTML = Object.entries(ubicacionesVivo)
+    .map(([id, u]) => `
+      <span class="lista-vivo-item">
+        ${u.nombre}
+        <span class="lista-vivo-hora">${tiempoRelativo(u.hora)}</span>
+      </span>`)
+    .join("");
+}
+
+function tiempoRelativo(fechaIso) {
+  const segundos = Math.max(0, Math.round((Date.now() - new Date(fechaIso).getTime()) / 1000));
+  if (segundos < 60) return `hace ${segundos}s`;
+  const minutos = Math.round(segundos / 60);
+  return `hace ${minutos} min`;
+}
+
+// Retira del mapa a quien no manda heartbeat hace rato (jornada cerrada,
+// app cerrada, sin señal) para que el mapa no acumule posiciones muertas.
+function iniciarBarridoVivo() {
+  if (barridoVivoIniciado) return;
+  barridoVivoIniciado = true;
+
+  setInterval(() => {
+    const limiteMs = MINUTOS_INACTIVO_VIVO * 60 * 1000;
+    let huboCambios = false;
+
+    Object.entries(ubicacionesVivo).forEach(([id, u]) => {
+      if (Date.now() - new Date(u.hora).getTime() > limiteMs) {
+        delete ubicacionesVivo[id];
+        if (marcadoresVivo[id]) {
+          mapaVivo.removeLayer(marcadoresVivo[id]);
+          delete marcadoresVivo[id];
+        }
+        huboCambios = true;
+      }
+    });
+
+    if (huboCambios) refrescarPanelVivo();
+    else if (Object.keys(ubicacionesVivo).length > 0) {
+      // Aunque nadie se haya caído, refresca los "hace Xs/min" de la lista.
+      refrescarPanelVivo();
+    }
+  }, 30000);
+}
+
+// ---------------------------------------------------------------------
 // NOTIFICACIONES: campana con contador + toast en vivo via Socket.IO
 // ---------------------------------------------------------------------
 let conteoNotificacionesNoLeidas = 0;
@@ -1581,6 +1721,14 @@ function iniciarSocketNotificaciones() {
 
     socketNotificaciones.on("connect", () => {
       console.log("Conectado al servidor de notificaciones en vivo");
+      // Misma conexión sirve para el mapa en vivo del panel de ubicación,
+      // en vez de abrir un segundo socket solo para eso.
+      socketNotificaciones.emit("join_monitoreo");
+    });
+
+    socketNotificaciones.on("ubicacion:heartbeat", (data) => {
+      actualizarPosicionVivo(data);
+      refrescarPanelVivo();
     });
 
     socketNotificaciones.on("alerta_vendedor", (data) => {
