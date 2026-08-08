@@ -51,15 +51,34 @@ async function misIntercambios(req, res) {
   try {
     const [rows] = await pool.query(
       `SELECT il.id, il.cantidad, il.estado, il.fecha, il.leads_ofrecidos, il.leads_recibidos,
-              uo.nombre AS vendedor_origen, uo.id AS vendedor_origen_id,
-              ud.nombre AS vendedor_destino, ud.id AS vendedor_destino_id
+              uo.nombre AS vendedor_origen, uo.id AS vendedor_origen_id, zo.distrito AS vendedor_origen_distrito,
+              ud.nombre AS vendedor_destino, ud.id AS vendedor_destino_id, zd.distrito AS vendedor_destino_distrito
        FROM intercambios_leads il
        JOIN usuarios uo ON uo.id = il.vendedor_origen_id
+       LEFT JOIN zonas zo ON zo.id = uo.zona_id
        JOIN usuarios ud ON ud.id = il.vendedor_destino_id
+       LEFT JOIN zonas zd ON zd.id = ud.zona_id
        WHERE il.vendedor_origen_id = ? OR il.vendedor_destino_id = ?
        ORDER BY il.fecha DESC`,
       [vendedorId, vendedorId]
     );
+
+    // Obtener distritos de los leads involucrados para dar contexto visual en el APP
+    for (const row of rows) {
+      if (row.leads_ofrecidos) {
+        const ids = row.leads_ofrecidos.split(',').filter(id => id).map(Number);
+        if (ids.length > 0) {
+          const [distritos] = await pool.query(
+            `SELECT DISTINCT lb.distrito FROM leads l JOIN leads_base lb ON lb.id = l.lead_base_id WHERE l.id IN (?)`,
+            [ids]
+          );
+          row.distritos_leads = distritos.map(d => d.distrito);
+        } else {
+          row.distritos_leads = [];
+        }
+      }
+    }
+
     res.json(rows);
   } catch (err) {
     console.error(err);

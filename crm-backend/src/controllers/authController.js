@@ -75,8 +75,8 @@ async function login(req, res) {
         email: usuario.email,
         rol: usuario.rol,
         zona_id: usuario.zona_id,
-        zona_nombre: usuario.zona_nombre,
-        distrito: usuario.distrito
+        zona_nombre: usuario.zona_nombre || "CORPORATIVO",
+        distrito: usuario.distrito || "LIMA"
       },
     });
   } catch (err) {
