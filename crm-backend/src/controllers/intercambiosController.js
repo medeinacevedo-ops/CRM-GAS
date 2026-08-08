@@ -139,17 +139,20 @@ async function confirmarIntercambio(req, res) {
 
 async function rechazarIntercambio(req, res) {
   const { id } = req.params;
-  const vendedorId = req.usuario.id;
+  const userId = req.usuario.id;
   try {
+    // Permitir que tanto el origen (cancelar) como el destino (rechazar) puedan anular la solicitud
     const [result] = await pool.query(
-      `UPDATE intercambios_leads SET estado = 'rechazado' WHERE id = ? AND vendedor_destino_id = ? AND estado = 'pendiente'`,
-      [id, vendedorId]
+      `UPDATE intercambios_leads
+       SET estado = 'rechazado'
+       WHERE id = ? AND (vendedor_destino_id = ? OR vendedor_origen_id = ?) AND estado = 'pendiente'`,
+      [id, userId, userId]
     );
-    if (result.affectedRows === 0) return res.status(404).json({ error: "No se pudo rechazar" });
-    res.json({ mensaje: "Intercambio rechazado" });
+    if (result.affectedRows === 0) return res.status(404).json({ error: "No se pudo anular el intercambio. Verifique que aún esté pendiente." });
+    res.json({ mensaje: "Intercambio anulado correctamente" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Error al rechazar" });
+    res.status(500).json({ error: "Error al procesar la anulación" });
   }
 }
 
