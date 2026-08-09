@@ -1704,8 +1704,19 @@ let filtrosReportesInicializados = false;
 
 async function cargarPantallaReportesExport() {
   if (!filtrosReportesInicializados) {
-    await inicializarFiltroVendedorReportes();
+    await Promise.all([inicializarFiltroVendedorReportes(), inicializarFiltroBasesReportes()]);
     filtrosReportesInicializados = true;
+  }
+}
+
+async function inicializarFiltroBasesReportes() {
+  try {
+    const cargas = await apiFetch("/leads/cargas");
+    document.getElementById("reportes-filtro-bases").innerHTML =
+      `<option value="">Todas las bases</option>` +
+      cargas.map((c) => `<option value="${c.id}">${c.nombre_archivo} (${c.total_registros})</option>`).join("");
+  } catch (err) {
+    console.error("Error al cargar bases para reportes:", err.message);
   }
 }
 
@@ -1741,6 +1752,13 @@ async function descargarReporteCsv(btn) {
   if (desde) params.set("desde", desde);
   if (hasta) params.set("hasta", hasta);
   if (vendedorId) params.set("vendedor_id", vendedorId);
+
+  if (tipo === "ventas" || tipo === "base-leads") {
+    const basesSeleccionadas = Array.from(document.getElementById("reportes-filtro-bases").selectedOptions)
+      .map((opt) => opt.value)
+      .filter((v) => v !== "");
+    if (basesSeleccionadas.length > 0) params.set("base_ids", basesSeleccionadas.join(","));
+  }
 
   btn.disabled = true;
   btn.textContent = "Generando…";

@@ -616,12 +616,13 @@
         <div class="panel-header">
           <h2>Exportar reportes</h2>
         </div>
-        <p class="descripcion">Descarga cualquiera de estos reportes en CSV (compatible con Excel), con los filtros que elijas abajo. Los filtros se aplican a todas las tarjetas por igual.</p>
+        <p class="descripcion">Descarga cualquiera de estos reportes en CSV (compatible con Excel). Fecha y vendedor aplican a todas las tarjetas; la base cargada solo aplica a "Ventas" y "Base con último resultado".</p>
 
         <div class="filtros-visitas">
           <input type="date" id="reportes-filtro-desde" title="Desde">
           <input type="date" id="reportes-filtro-hasta" title="Hasta">
           <select id="reportes-filtro-vendedor"><option value="">Todos los vendedores</option></select>
+          <select id="reportes-filtro-bases" multiple size="3" title="Ctrl/Cmd + click para elegir varias bases"><option value="">Todas las bases</option></select>
         </div>
 
         <div class="grid-reportes">

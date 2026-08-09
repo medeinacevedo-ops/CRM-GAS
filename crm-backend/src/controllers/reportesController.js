@@ -30,8 +30,44 @@ function construirFiltros(req, columnaFecha, columnaVendedor) {
     valores.push(vendedor_id);
   }
 
-  const sql = condiciones.length > 0 ? `WHERE ${condiciones.join(" AND ")}` : "";
-  return { sql, valores };
+  return { condiciones, valores };
+}
+
+/**
+ * Filtro opcional por una o varias bases cargadas (bases_cargadas.id),
+ * recibido como ?base_ids=3,5,8. Solo aplica a reportes que parten de
+ * leads_base (Ventas y Base de leads) -- el resto lo ignora sin problema.
+ */
+function agregarFiltroBases(req, condiciones, valores, columnaCarga) {
+  const { base_ids } = req.query;
+  if (!base_ids) return;
+
+  const ids = base_ids
+    .split(",")
+    .map((id) => parseInt(id.trim(), 10))
+    .filter((id) => Number.isInteger(id));
+
+  if (ids.length === 0) return;
+
+  condiciones.push(`${columnaCarga} IN (${ids.map(() => "?").join(",")})`);
+  valores.push(...ids);
+}
+
+function armarWhere(condiciones) {
+  return condiciones.length > 0 ? `WHERE ${condiciones.join(" AND ")}` : "";
+}
+
+/**
+ * Formatea un total de segundos como "Xh Ym Zs", para las columnas de
+ * duración legibles al lado de la columna en segundos "cruda".
+ */
+function formatearSegundos(totalSegundos) {
+  if (totalSegundos === null || totalSegundos === undefined) return "";
+  const s = Math.max(0, Math.round(totalSegundos));
+  const horas = Math.floor(s / 3600);
+  const minutos = Math.floor((s % 3600) / 60);
+  const segundos = s % 60;
+  return `${horas}h ${minutos}m ${segundos}s`;
 }
 
 function nombreConFecha(base) {
@@ -45,7 +81,9 @@ function nombreConFecha(base) {
  */
 async function exportarVentas(req, res) {
   try {
-    const { sql, valores } = construirFiltros(req, "v.fecha", "vi.vendedor_id");
+    const { condiciones, valores } = construirFiltros(req, "v.fecha", "vi.vendedor_id");
+    agregarFiltroBases(req, condiciones, valores, "lb.carga_id");
+    const sql = armarWhere(condiciones);
 
     const [filas] = await pool.query(
       `SELECT v.fecha, u.nombre AS vendedor, lb.nombre AS cliente, lb.telefono,
@@ -87,15 +125,19 @@ async function exportarVentas(req, res) {
  */
 async function exportarBaseLeads(req, res) {
   try {
-    const { sql, valores } = construirFiltros(req, "ultima.fecha", "l.vendedor_id");
+    const { condiciones, valores } = construirFiltros(req, "ultima.fecha", "l.vendedor_id");
+    agregarFiltroBases(req, condiciones, valores, "lb.carga_id");
+    const sql = armarWhere(condiciones);
 
     const [filas] = await pool.query(
       `SELECT lb.nombre AS cliente, lb.telefono, lb.direccion, lb.distrito,
+              bc.nombre_archivo AS base_cargada,
               z.nombre AS zona, u.nombre AS vendedor_asignado, l.estado,
               ultima.resultado AS ultimo_resultado, ultima.fecha AS ultima_interaccion,
               ultima.notas
        FROM leads l
        JOIN leads_base lb ON lb.id = l.lead_base_id
+       JOIN bases_cargadas bc ON bc.id = lb.carga_id
        JOIN zonas z ON z.id = l.zona_id
        LEFT JOIN usuarios u ON u.id = l.vendedor_id
        LEFT JOIN (
@@ -115,6 +157,7 @@ async function exportarBaseLeads(req, res) {
       { clave: "telefono", titulo: "Teléfono" },
       { clave: "direccion", titulo: "Dirección" },
       { clave: "distrito", titulo: "Distrito" },
+      { clave: "base_cargada", titulo: "Base cargada" },
       { clave: "zona", titulo: "Zona" },
       { clave: "vendedor_asignado", titulo: "Vendedor asignado" },
       { clave: "estado", titulo: "Estado del lead" },
@@ -134,12 +177,23 @@ async function exportarBaseLeads(req, res) {
  */
 async function exportarConexion(req, res) {
   try {
-    const { sql, valores } = construirFiltros(req, "j.fecha", "j.vendedor_id");
+    const { condiciones, valores } = construirFiltros(req, "j.fecha", "j.vendedor_id");
+    const sql = armarWhere(condiciones);
 
-    const [filas] = await pool.query(
+    // Se recalcula en vivo (en vez de leer tiempo_activo_total directo)
+    // porque esa columna solo se completa al marcar salida -- en una
+    // jornada todavía abierta queda NULL y el reporte se veía "mal
+    // calculado" para cualquiera que siga conectado. Aquí se resta el
+    // tiempo en pausa contra el tiempo transcurrido hasta ahora (o hasta
+    // la hora de salida si ya cerró), igual que hace jornadaController.
+    const [filasCrudas] = await pool.query(
       `SELECT j.fecha, u.nombre AS vendedor, j.hora_ingreso, j.hora_salida,
-              j.tiempo_activo_total AS minutos_activos,
-              CONCAT(FLOOR(j.tiempo_activo_total / 60), 'h ', MOD(j.tiempo_activo_total, 60), 'm') AS tiempo_activo_formato
+              IF(j.hora_salida IS NULL, 'En curso', 'Finalizada') AS estado,
+              TIMESTAMPDIFF(SECOND, j.hora_ingreso, COALESCE(j.hora_salida, NOW()))
+                - COALESCE((
+                    SELECT SUM(TIMESTAMPDIFF(SECOND, rp.hora_inicio, COALESCE(rp.hora_fin, NOW())))
+                    FROM registros_pausas rp WHERE rp.jornada_id = j.id
+                  ), 0) AS segundos_activos
        FROM jornadas j
        JOIN usuarios u ON u.id = j.vendedor_id
        ${sql}
@@ -147,12 +201,19 @@ async function exportarConexion(req, res) {
       valores
     );
 
+    const filas = filasCrudas.map((f) => ({
+      ...f,
+      segundos_activos: Math.max(0, f.segundos_activos),
+      tiempo_activo_formato: formatearSegundos(f.segundos_activos),
+    }));
+
     enviarCsv(res, nombreConFecha("horas_conexion"), [
       { clave: "fecha", titulo: "Fecha" },
       { clave: "vendedor", titulo: "Vendedor" },
       { clave: "hora_ingreso", titulo: "Hora de ingreso" },
       { clave: "hora_salida", titulo: "Hora de salida" },
-      { clave: "minutos_activos", titulo: "Minutos activos" },
+      { clave: "estado", titulo: "Estado" },
+      { clave: "segundos_activos", titulo: "Segundos activos" },
       { clave: "tiempo_activo_formato", titulo: "Tiempo activo" },
     ], filas);
   } catch (err) {
@@ -169,12 +230,13 @@ async function exportarConexion(req, res) {
  */
 async function exportarPausas(req, res) {
   try {
-    const { sql, valores } = construirFiltros(req, "j.fecha", "j.vendedor_id");
+    const { condiciones, valores } = construirFiltros(req, "j.fecha", "j.vendedor_id");
+    const sql = armarWhere(condiciones);
 
-    const [filas] = await pool.query(
+    const [filasCrudas] = await pool.query(
       `SELECT j.fecha, u.nombre AS vendedor, cp.nombre AS pausa, cp.tipo,
               rp.hora_inicio, rp.hora_fin,
-              TIMESTAMPDIFF(MINUTE, rp.hora_inicio, COALESCE(rp.hora_fin, NOW())) AS duracion_minutos,
+              TIMESTAMPDIFF(SECOND, rp.hora_inicio, COALESCE(rp.hora_fin, NOW())) AS duracion_segundos,
               IF(rp.hora_fin IS NULL, 'En curso', 'Finalizada') AS estado
        FROM registros_pausas rp
        JOIN jornadas j ON j.id = rp.jornada_id
@@ -185,6 +247,11 @@ async function exportarPausas(req, res) {
       valores
     );
 
+    const filas = filasCrudas.map((f) => ({
+      ...f,
+      duracion_formato: formatearSegundos(f.duracion_segundos),
+    }));
+
     enviarCsv(res, nombreConFecha("horas_pausas"), [
       { clave: "fecha", titulo: "Fecha" },
       { clave: "vendedor", titulo: "Vendedor" },
@@ -192,7 +259,8 @@ async function exportarPausas(req, res) {
       { clave: "tipo", titulo: "Tipo" },
       { clave: "hora_inicio", titulo: "Hora de inicio" },
       { clave: "hora_fin", titulo: "Hora de fin" },
-      { clave: "duracion_minutos", titulo: "Duración (min)" },
+      { clave: "duracion_segundos", titulo: "Duración (segundos)" },
+      { clave: "duracion_formato", titulo: "Duración" },
       { clave: "estado", titulo: "Estado" },
     ], filas);
   } catch (err) {
@@ -209,7 +277,8 @@ async function exportarPausas(req, res) {
  */
 async function exportarVisitas(req, res) {
   try {
-    const { sql, valores } = construirFiltros(req, "vi.fecha", "vi.vendedor_id");
+    const { condiciones, valores } = construirFiltros(req, "vi.fecha", "vi.vendedor_id");
+    const sql = armarWhere(condiciones);
 
     const [filas] = await pool.query(
       `SELECT vi.fecha, u.nombre AS vendedor, lb.nombre AS cliente, lb.telefono,

@@ -707,3 +707,4 @@ form button:hover { background: #236360; }
   flex-grow: 1;
   line-height: 1.4;
 }
+#reportes-filtro-bases { min-width: 220px; }
