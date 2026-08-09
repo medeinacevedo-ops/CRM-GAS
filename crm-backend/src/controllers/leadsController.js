@@ -232,8 +232,58 @@ async function asignarIndividual(req, res) {
     res.json({ success: true });
 }
 
+/**
+ * Desglose por zona de una carga, para la pantalla de Reparto automático:
+ * de los leads_base de esta carga, cuántos ya se generaron como leads
+ * operativos por zona (según el match de distrito, igual criterio que
+ * generarLeadsOperativos), cuántos siguen disponibles (estado 'nuevo'),
+ * cuántos vendedores activos hay en esa zona, y cuántos leads_base de
+ * la carga no matchean con NINGUNA zona registrada todavía.
+ */
 async function resumenZonasCarga(req, res) {
-    res.json({ success: true });
+  const { id } = req.params;
+  try {
+    const [zonas] = await pool.query(
+      `SELECT z.id, z.nombre, z.distrito,
+              COUNT(l.id) AS total_leads,
+              SUM(CASE WHEN l.estado = 'nuevo' THEN 1 ELSE 0 END) AS leads_disponibles,
+              (SELECT COUNT(*) FROM usuarios u
+               WHERE u.zona_id = z.id AND u.rol = 'vendedor' AND u.activo = 1) AS vendedores
+       FROM zonas z
+       JOIN leads_base lb
+         ON lb.distrito COLLATE utf8mb4_unicode_ci = z.distrito COLLATE utf8mb4_unicode_ci
+        AND lb.carga_id = ?
+       LEFT JOIN leads l ON l.lead_base_id = lb.id AND l.zona_id = z.id
+       GROUP BY z.id, z.nombre, z.distrito
+       ORDER BY z.nombre`,
+      [id]
+    );
+
+    const [[{ sin_zona }]] = await pool.query(
+      `SELECT COUNT(*) AS sin_zona
+       FROM leads_base lb
+       WHERE lb.carga_id = ?
+         AND NOT EXISTS (
+           SELECT 1 FROM zonas z
+           WHERE z.distrito COLLATE utf8mb4_unicode_ci = lb.distrito COLLATE utf8mb4_unicode_ci
+         )`,
+      [id]
+    );
+
+    // leads_disponibles llega como string/decimal por el SUM en MySQL;
+    // se normaliza a número para que el frontend lo compare bien (> 0).
+    const zonasNormalizadas = zonas.map((z) => ({
+      ...z,
+      total_leads: Number(z.total_leads),
+      leads_disponibles: Number(z.leads_disponibles || 0),
+      vendedores: Number(z.vendedores),
+    }));
+
+    res.json({ zonas: zonasNormalizadas, sin_zona: Number(sin_zona) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener el desglose por zona" });
+  }
 }
 
 /**

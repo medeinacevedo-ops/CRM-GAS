@@ -451,6 +451,8 @@ async function cargarDesgloseReparto(cargaId) {
     document.getElementById("rep-paso-zona").classList.remove("oculto");
   } catch (err) {
     console.error("Error al cargar el desglose:", err.message);
+    document.getElementById("reparto-mensaje").textContent = `Error al cargar el desglose: ${err.message}`;
+    document.getElementById("reparto-mensaje").classList.add("error");
   }
 }
 
