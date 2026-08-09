@@ -155,7 +155,10 @@
 
         <div class="filtros-visitas">
           <input type="month" id="dash-filtro-mes" title="Mes">
-          <select id="dash-filtro-bases" multiple size="3" title="Ctrl/Cmd + click para elegir varias bases"><option value="">Todas las bases</option></select>
+          <div class="multiselect" id="dash-filtro-bases">
+            <button type="button" class="multiselect-boton">Todas las bases</button>
+            <div class="multiselect-panel oculto"></div>
+          </div>
         </div>
 
         <div id="resumen-indicadores" class="indicadores-card">
@@ -631,7 +634,10 @@
           <input type="date" id="reportes-filtro-desde" title="Desde">
           <input type="date" id="reportes-filtro-hasta" title="Hasta">
           <select id="reportes-filtro-vendedor"><option value="">Todos los vendedores</option></select>
-          <select id="reportes-filtro-bases" multiple size="3" title="Ctrl/Cmd + click para elegir varias bases"><option value="">Todas las bases</option></select>
+          <div class="multiselect" id="reportes-filtro-bases">
+            <button type="button" class="multiselect-boton">Todas las bases</button>
+            <div class="multiselect-panel oculto"></div>
+          </div>
         </div>
 
         <div class="grid-reportes">

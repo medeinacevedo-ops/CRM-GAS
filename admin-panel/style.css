@@ -711,24 +711,24 @@ form button:hover { background: #236360; }
 
 /* ---------- MINI-RESUMEN DE INDICADORES (LEADS/COBERTURA/CONTACTOS/...) ---------- */
 .indicadores-card {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: 24px;
+}
+.indicadores-scroll {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+}
+.indicador-item {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-  padding: 4px 0;
-  margin-bottom: 24px;
-  overflow-x: auto;
+  padding: 14px 16px;
 }
-.indicadores-scroll {
-  display: flex;
-  min-width: max-content;
-}
-.indicador-item {
-  flex: 1 0 150px;
-  padding: 14px 20px;
-  border-left: 1px solid var(--border);
-}
-.indicador-item:first-child { border-left: none; }
 .indicador-top {
   display: flex;
   align-items: center;
@@ -745,3 +745,54 @@ form button:hover { background: #236360; }
 .indicador-tendencia.subio { color: #1e7a52; }
 .indicador-tendencia.bajo { color: var(--coral); }
 .indicador-tendencia.sin-dato { color: var(--text-muted); font-weight: 500; }
+
+/* ---------- MULTI-SELECT DESPLEGABLE (reemplaza al <select multiple> nativo) ---------- */
+.multiselect { position: relative; min-width: 220px; }
+.multiselect-boton {
+  width: 100%;
+  height: 100%;
+  min-height: 34px;
+  padding: 7px 12px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.multiselect-boton:hover { border-color: var(--teal); }
+.multiselect-boton::after {
+  content: "▾";
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+.multiselect-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+  z-index: 20;
+  padding: 6px 0;
+}
+.multiselect-opcion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.multiselect-opcion:hover { background: #f4f6f8; }
+.multiselect-opcion input { cursor: pointer; }

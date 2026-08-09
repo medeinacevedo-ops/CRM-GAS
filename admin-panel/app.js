@@ -504,6 +504,97 @@ function formatoMoneda(valor) {
 
 let dashFiltrosInicializados = false;
 
+/**
+ * Convierte un contenedor <div class="multiselect" id="..."> (con un
+ * boton y un panel adentro) en un dropdown de checkboxes con opcion
+ * "Todas las bases" -- reemplaza el <select multiple> nativo, que se
+ * veia como una caja de lista siempre abierta ocupando espacio fijo en
+ * vez de un desplegable real. Reutilizado por el filtro del Dashboard y
+ * el de Reportes.
+ */
+function crearMultiSelect(idContenedor) {
+  const contenedor = document.getElementById(idContenedor);
+  const boton = contenedor.querySelector(".multiselect-boton");
+  const panel = contenedor.querySelector(".multiselect-panel");
+  let opciones = []; // [{ value, label }]
+  let seleccionados = new Set();
+
+  function actualizarBoton() {
+    if (seleccionados.size === 0) {
+      boton.textContent = "Todas las bases";
+    } else if (seleccionados.size === 1) {
+      const op = opciones.find((o) => seleccionados.has(o.value));
+      boton.textContent = op ? op.label : "1 base seleccionada";
+    } else {
+      boton.textContent = `${seleccionados.size} bases seleccionadas`;
+    }
+  }
+
+  function render() {
+    const filaTodas = `
+      <label class="multiselect-opcion">
+        <input type="checkbox" data-todas ${seleccionados.size === 0 ? "checked" : ""}>
+        <span>Todas las bases</span>
+      </label>`;
+    const filasOpciones = opciones
+      .map(
+        (o) => `
+      <label class="multiselect-opcion">
+        <input type="checkbox" value="${o.value}" ${seleccionados.has(o.value) ? "checked" : ""}>
+        <span>${o.label}</span>
+      </label>`
+      )
+      .join("");
+    panel.innerHTML = filaTodas + filasOpciones;
+
+    panel.querySelector("input[data-todas]").addEventListener("change", (e) => {
+      if (e.target.checked) {
+        seleccionados.clear();
+        render();
+        actualizarBoton();
+        contenedor.dispatchEvent(new Event("change"));
+      } else {
+        e.target.checked = true; // "Todas" solo se desmarca eligiendo otra opcion, no sola
+      }
+    });
+
+    panel.querySelectorAll('input[type="checkbox"]:not([data-todas])').forEach((chk) => {
+      chk.addEventListener("change", (e) => {
+        if (e.target.checked) seleccionados.add(e.target.value);
+        else seleccionados.delete(e.target.value);
+        render();
+        actualizarBoton();
+        contenedor.dispatchEvent(new Event("change"));
+      });
+    });
+  }
+
+  boton.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const abierto = !panel.classList.contains("oculto");
+    document.querySelectorAll(".multiselect-panel").forEach((p) => p.classList.add("oculto"));
+    if (!abierto) panel.classList.remove("oculto");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!contenedor.contains(e.target)) panel.classList.add("oculto");
+  });
+
+  return {
+    setOpciones(nuevasOpciones) {
+      opciones = nuevasOpciones;
+      seleccionados = new Set();
+      render();
+      actualizarBoton();
+    },
+    getSeleccionados() {
+      return Array.from(seleccionados);
+    },
+  };
+}
+
+let dashMultiSelectBases = null;
+
 async function inicializarFiltrosDashboard() {
   const inputMes = document.getElementById("dash-filtro-mes");
   const hoy = new Date();
@@ -511,9 +602,8 @@ async function inicializarFiltrosDashboard() {
 
   try {
     const cargas = await apiFetch("/leads/cargas");
-    document.getElementById("dash-filtro-bases").innerHTML =
-      `<option value="">Todas las bases</option>` +
-      cargas.map((c) => `<option value="${c.id}">${c.nombre_archivo} (${c.total_registros})</option>`).join("");
+    if (!dashMultiSelectBases) dashMultiSelectBases = crearMultiSelect("dash-filtro-bases");
+    dashMultiSelectBases.setOpciones(cargas.map((c) => ({ value: String(c.id), label: `${c.nombre_archivo} (${c.total_registros})` })));
   } catch (err) {
     console.error("Error al cargar bases para el dashboard:", err.message);
   }
@@ -528,9 +618,7 @@ function paramsFiltrosDashboard() {
   const mes = document.getElementById("dash-filtro-mes").value;
   if (mes) params.set("mes", mes);
 
-  const basesSeleccionadas = Array.from(document.getElementById("dash-filtro-bases").selectedOptions)
-    .map((opt) => opt.value)
-    .filter((v) => v !== "");
+  const basesSeleccionadas = dashMultiSelectBases ? dashMultiSelectBases.getSeleccionados() : [];
   if (basesSeleccionadas.length > 0) params.set("base_ids", basesSeleccionadas.join(","));
 
   return params;
@@ -1799,12 +1887,13 @@ async function cargarPantallaReportesExport() {
   }
 }
 
+let reportesMultiSelectBases = null;
+
 async function inicializarFiltroBasesReportes() {
   try {
     const cargas = await apiFetch("/leads/cargas");
-    document.getElementById("reportes-filtro-bases").innerHTML =
-      `<option value="">Todas las bases</option>` +
-      cargas.map((c) => `<option value="${c.id}">${c.nombre_archivo} (${c.total_registros})</option>`).join("");
+    if (!reportesMultiSelectBases) reportesMultiSelectBases = crearMultiSelect("reportes-filtro-bases");
+    reportesMultiSelectBases.setOpciones(cargas.map((c) => ({ value: String(c.id), label: `${c.nombre_archivo} (${c.total_registros})` })));
   } catch (err) {
     console.error("Error al cargar bases para reportes:", err.message);
   }
@@ -1844,9 +1933,7 @@ async function descargarReporteCsv(btn) {
   if (vendedorId) params.set("vendedor_id", vendedorId);
 
   if (tipo === "ventas" || tipo === "base-leads") {
-    const basesSeleccionadas = Array.from(document.getElementById("reportes-filtro-bases").selectedOptions)
-      .map((opt) => opt.value)
-      .filter((v) => v !== "");
+    const basesSeleccionadas = reportesMultiSelectBases ? reportesMultiSelectBases.getSeleccionados() : [];
     if (basesSeleccionadas.length > 0) params.set("base_ids", basesSeleccionadas.join(","));
   }
 
