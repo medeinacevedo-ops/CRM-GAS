@@ -313,7 +313,7 @@ document.getElementById("op-select-zona").addEventListener("change", async (e) =
           (v) => `
           <tr>
             <td>${v.nombre}</td>
-            <td>${v.cartera_actual}</td>
+            <td>${v.cartera_total}</td>
             <td><input type="number" min="0" value="0" data-vendedor-id="${v.id}" class="op-input-cantidad"></td>
           </tr>`
         )
@@ -691,7 +691,7 @@ function renderTablaUsuarios(usuarios) {
         <td>${u.email}</td>
         <td><span class="badge ${u.rol}">${u.rol}</span></td>
         <td>${u.zona_nombre ? `${u.zona_nombre} — ${u.distrito}` : "—"}</td>
-        <td>${u.rol === "vendedor" ? u.cartera_actual : "—"}</td>
+        <td>${u.rol === "vendedor" ? u.cartera_total : "—"}</td>
         <td>
           <label class="switch">
             <input type="checkbox" class="switch-activo" data-id="${u.id}" ${u.activo ? "checked" : ""}>
