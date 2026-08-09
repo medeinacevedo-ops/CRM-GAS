@@ -131,6 +131,10 @@
               <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
               <span>Intercambios de leads</span>
             </button>
+            <button class="nav-item" data-vista="reportes-export">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+              <span>Exportar reportes</span>
+            </button>
           </div>
         </div>
       </nav>
@@ -604,6 +608,57 @@
           <button id="btn-ubicacion-pagina-anterior" class="btn-secundario">← Anterior</button>
           <span id="info-paginacion-ubicacion"></span>
           <button id="btn-ubicacion-pagina-siguiente" class="btn-secundario">Siguiente →</button>
+        </div>
+      </section>
+
+      <!-- Exportar reportes -->
+      <section id="panel-reportes-export" class="panel oculto">
+        <div class="panel-header">
+          <h2>Exportar reportes</h2>
+        </div>
+        <p class="descripcion">Descarga cualquiera de estos reportes en CSV (compatible con Excel), con los filtros que elijas abajo. Los filtros se aplican a todas las tarjetas por igual.</p>
+
+        <div class="filtros-visitas">
+          <input type="date" id="reportes-filtro-desde" title="Desde">
+          <input type="date" id="reportes-filtro-hasta" title="Hasta">
+          <select id="reportes-filtro-vendedor"><option value="">Todos los vendedores</option></select>
+        </div>
+
+        <div class="grid-reportes">
+          <div class="reporte-card">
+            <div class="reporte-card-icono">💰</div>
+            <h3>Ventas</h3>
+            <p>Ventas cerradas: vendedor, cliente, producto y monto.</p>
+            <button class="btn-primario btn-exportar" data-reporte="ventas">Descargar CSV</button>
+          </div>
+
+          <div class="reporte-card">
+            <div class="reporte-card-icono">📋</div>
+            <h3>Base con último resultado</h3>
+            <p>Toda la base de leads con su estado y la interacción más reciente registrada.</p>
+            <button class="btn-primario btn-exportar" data-reporte="base-leads">Descargar CSV</button>
+          </div>
+
+          <div class="reporte-card">
+            <div class="reporte-card-icono">🕒</div>
+            <h3>Horas de conexión</h3>
+            <p>Ingreso, salida y tiempo activo total por vendedor y día.</p>
+            <button class="btn-primario btn-exportar" data-reporte="conexion">Descargar CSV</button>
+          </div>
+
+          <div class="reporte-card">
+            <div class="reporte-card-icono">⏸️</div>
+            <h3>Horas de auxiliar (pausas)</h3>
+            <p>Cada pausa tomada, tipo, duración y si sigue en curso.</p>
+            <button class="btn-primario btn-exportar" data-reporte="pausas">Descargar CSV</button>
+          </div>
+
+          <div class="reporte-card">
+            <div class="reporte-card-icono">🚶</div>
+            <h3>Visitas (todas)</h3>
+            <p>Todas las visitas, no solo las cerradas — incluye no interesado, reagendar, no ubicado.</p>
+            <button class="btn-primario btn-exportar" data-reporte="visitas">Descargar CSV</button>
+          </div>
         </div>
       </section>
 

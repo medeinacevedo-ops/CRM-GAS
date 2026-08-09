@@ -122,6 +122,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.vista === "visitas") cargarPantallaVisitas();
     if (btn.dataset.vista === "permisos") cargarPermisos();
     if (btn.dataset.vista === "ubicacion") cargarPantallaUbicacion();
+    if (btn.dataset.vista === "reportes-export") cargarPantallaReportesExport();
   });
 });
 
@@ -1694,6 +1695,84 @@ function iniciarBarridoVivo() {
       refrescarPanelVivo();
     }
   }, 30000);
+}
+
+// ---------------------------------------------------------------------
+// REPORTES EXPORTABLES (CSV) — filtros compartidos por fecha y vendedor
+// ---------------------------------------------------------------------
+let filtrosReportesInicializados = false;
+
+async function cargarPantallaReportesExport() {
+  if (!filtrosReportesInicializados) {
+    await inicializarFiltroVendedorReportes();
+    filtrosReportesInicializados = true;
+  }
+}
+
+async function inicializarFiltroVendedorReportes() {
+  try {
+    const usuarios = await apiFetch("/usuarios?rol=vendedor");
+    document.getElementById("reportes-filtro-vendedor").innerHTML =
+      `<option value="">Todos los vendedores</option>` +
+      usuarios.map((u) => `<option value="${u.id}">${u.nombre}</option>`).join("");
+  } catch (err) {
+    console.error("Error al cargar vendedores para reportes:", err.message);
+  }
+}
+
+document.querySelectorAll(".btn-exportar").forEach((btn) => {
+  btn.addEventListener("click", () => descargarReporteCsv(btn));
+});
+
+/**
+ * Descarga un reporte CSV con los filtros actuales. No se puede usar un
+ * <a href> simple porque el endpoint requiere el token en el header
+ * Authorization — se pide el archivo por fetch, se recibe como blob, y
+ * se dispara la descarga con un <a> temporal.
+ */
+async function descargarReporteCsv(btn) {
+  const tipo = btn.dataset.reporte;
+  const textoOriginal = btn.textContent;
+
+  const params = new URLSearchParams();
+  const desde = document.getElementById("reportes-filtro-desde").value;
+  const hasta = document.getElementById("reportes-filtro-hasta").value;
+  const vendedorId = document.getElementById("reportes-filtro-vendedor").value;
+  if (desde) params.set("desde", desde);
+  if (hasta) params.set("hasta", hasta);
+  if (vendedorId) params.set("vendedor_id", vendedorId);
+
+  btn.disabled = true;
+  btn.textContent = "Generando…";
+
+  try {
+    const res = await fetch(`${API_URL}/reportes/${tipo}?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "No se pudo generar el reporte");
+    }
+
+    const blob = await res.blob();
+    const nombreArchivo =
+      res.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] || `${tipo}.csv`;
+
+    const urlTemporal = URL.createObjectURL(blob);
+    const enlace = document.createElement("a");
+    enlace.href = urlTemporal;
+    enlace.download = nombreArchivo;
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+    URL.revokeObjectURL(urlTemporal);
+  } catch (err) {
+    alert(`Error al exportar: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+  }
 }
 
 // ---------------------------------------------------------------------
