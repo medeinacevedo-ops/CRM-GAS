@@ -1,59 +1,31 @@
 const cron = require("node-cron");
 const pool = require("../config/db");
+const { cerrarEventosPendientes } = require("../utils/cierreAutomatico");
 
 /**
  * Tarea programada para cerrar jornadas y pausas olvidadas a la medianoche.
+ *
+ * IMPORTANTE (leer utils/cierreAutomatico.js): en Render free, esto solo
+ * corre si la instancia está despierta a esa hora exacta. Como red de
+ * seguridad adicional, el mismo cierre se aplica también de forma
+ * perezosa en jornadaController.marcarIngreso -- así que si esta tarea
+ * se salta una noche porque el servidor estaba dormido, igual se
+ * corrige solo en cuanto el vendedor vuelve a marcar ingreso.
  */
-async function cerrarEventosPendientes() {
+async function ejecutarCierreProgramado() {
   console.log("[Cron] Iniciando cierre automatico de eventos pendientes...");
-  const conn = await pool.getConnection();
-
   try {
-    await conn.beginTransaction();
-
-    // 1. Cerrar pausas abiertas de dias anteriores
-    // Ponemos como hora de fin las 23:59:59 del dia en que inicio
-    const [pausas] = await conn.query(
-      `UPDATE registros_pausas
-       SET hora_fin = CONCAT(DATE(hora_inicio), ' 23:59:59')
-       WHERE hora_fin IS NULL AND DATE(hora_inicio) < CURDATE()`
-    );
-    if (pausas.affectedRows > 0) {
-      console.log(`[Cron] Se cerraron ${pausas.affectedRows} pausas pendientes.`);
-    }
-
-    // 2. Cerrar jornadas abiertas de dias anteriores
-    // Ponemos como hora de salida las 23:59:59 de ese dia
-    const [jornadas] = await conn.query(
-      `UPDATE jornadas
-       SET hora_salida = CONCAT(fecha, ' 23:59:59')
-       WHERE hora_salida IS NULL AND fecha < CURDATE()`
-    );
-    if (jornadas.affectedRows > 0) {
-      console.log(`[Cron] Se cerraron ${jornadas.affectedRows} jornadas pendientes.`);
-
-      // 3. Recalcular tiempo activo total para las jornadas recien cerradas
-      await conn.query(
-        `UPDATE jornadas
-         SET tiempo_activo_total = TIMESTAMPDIFF(MINUTE, hora_ingreso, hora_salida)
-         WHERE tiempo_activo_total IS NULL AND hora_salida IS NOT NULL`
-      );
-    }
-
-    await conn.commit();
+    const { pausasCerradas, jornadasCerradas } = await cerrarEventosPendientes(pool);
+    if (pausasCerradas > 0) console.log(`[Cron] Se cerraron ${pausasCerradas} pausas pendientes.`);
+    if (jornadasCerradas > 0) console.log(`[Cron] Se cerraron ${jornadasCerradas} jornadas pendientes.`);
     console.log("[Cron] Cierre automatico completado con éxito.");
   } catch (err) {
-    await conn.rollback();
     console.error("[Cron] Error en el cierre automatico:", err);
-  } finally {
-    conn.release();
   }
 }
 
-// Programar para que corra todos los dias a las 00:05 AM
-cron.schedule("5 0 * * *", () => {
-  cerrarEventosPendientes();
-});
+// Programado para correr todos los días a las 00:05 (hora de Perú, ya que
+// config/db.js fija el time_zone de sesión a -05:00 en cada conexión).
+cron.schedule("5 0 * * *", ejecutarCierreProgramado);
 
-// Tambien exportamos para poder llamarlo al iniciar el servidor (opcional)
-module.exports = { cerrarEventosPendientes };
+module.exports = { ejecutarCierreProgramado };

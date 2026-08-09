@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const { cerrarEventosPendientes } = require("../utils/cierreAutomatico");
 
 /**
  * Marca el ingreso del vendedor.
@@ -10,6 +11,12 @@ async function marcarIngreso(req, res) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+
+    // Red de seguridad: si por lo que sea (servidor dormido en Render a
+    // medianoche) el cron de tasks/autoCloseTask.js no alcanzó a cerrar
+    // una jornada/pausa de un día anterior de ESTE vendedor, se cierra
+    // aquí mismo antes de abrir la de hoy -- ver utils/cierreAutomatico.js.
+    await cerrarEventosPendientes(conn, { vendedorId });
 
     const [existente] = await conn.query(
       `SELECT id FROM jornadas WHERE vendedor_id = ? AND fecha = DATE(NOW())`,

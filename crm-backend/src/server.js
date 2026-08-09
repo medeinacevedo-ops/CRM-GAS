@@ -22,6 +22,12 @@ const notificacionesRoutes = require("./routes/notificaciones");
 const ubicacionRoutes = require("./routes/ubicacion");
 const reportesRoutes = require("./routes/reportes");
 
+// Registra el cron de cierre automatico a medianoche (tasks/autoCloseTask.js).
+// Antes este archivo no se requeria en ningun lado del proyecto, asi que
+// el cron nunca llegaba a programarse -- ver la nota de robustez en
+// jornadaController.marcarIngreso para la red de seguridad complementaria.
+require("./tasks/autoCloseTask");
+
 const app = express();
 
 app.use(cors());
