@@ -502,9 +502,50 @@ function formatoMoneda(valor) {
   return `S/ ${Number(valor).toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-async function cargarDashboard() {
+let dashFiltrosInicializados = false;
+
+async function inicializarFiltrosDashboard() {
+  const inputMes = document.getElementById("dash-filtro-mes");
+  const hoy = new Date();
+  inputMes.value = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
+
   try {
-    const data = await apiFetch("/kpis/dashboard");
+    const cargas = await apiFetch("/leads/cargas");
+    document.getElementById("dash-filtro-bases").innerHTML =
+      `<option value="">Todas las bases</option>` +
+      cargas.map((c) => `<option value="${c.id}">${c.nombre_archivo} (${c.total_registros})</option>`).join("");
+  } catch (err) {
+    console.error("Error al cargar bases para el dashboard:", err.message);
+  }
+
+  inputMes.addEventListener("change", cargarDashboard);
+  document.getElementById("dash-filtro-bases").addEventListener("change", cargarDashboard);
+}
+
+/** Arma "?mes=...&base_ids=..." a partir de los filtros actuales del dashboard. */
+function paramsFiltrosDashboard() {
+  const params = new URLSearchParams();
+  const mes = document.getElementById("dash-filtro-mes").value;
+  if (mes) params.set("mes", mes);
+
+  const basesSeleccionadas = Array.from(document.getElementById("dash-filtro-bases").selectedOptions)
+    .map((opt) => opt.value)
+    .filter((v) => v !== "");
+  if (basesSeleccionadas.length > 0) params.set("base_ids", basesSeleccionadas.join(","));
+
+  return params;
+}
+
+async function cargarDashboard() {
+  if (!dashFiltrosInicializados) {
+    await inicializarFiltrosDashboard();
+    dashFiltrosInicializados = true;
+  }
+
+  const params = paramsFiltrosDashboard();
+
+  try {
+    const data = await apiFetch(`/kpis/dashboard?${params.toString()}`);
 
     document.getElementById("kpi-ventas-mes").textContent = formatoMoneda(data.ventas_mes);
     document.getElementById("kpi-convertidos").textContent = data.leads_convertidos_mes;
@@ -555,16 +596,63 @@ async function cargarDashboard() {
     console.error("Error al cargar el dashboard:", err.message);
   }
 
-  cargarSerieDiaria();
+  cargarResumenIndicadores(params);
+  cargarSerieDiaria(params);
 }
 
 document.getElementById("btn-refrescar-dashboard").addEventListener("click", cargarDashboard);
 
+/**
+ * Mini-resumen con tendencia (LEADS / COBERTURA / CONTACTOS / PEDIDOS /
+ * VENTAS / CONVERSIÓN), debajo de "Resumen general". Usa los mismos
+ * filtros de mes/base que el resto del dashboard.
+ */
+async function cargarResumenIndicadores(params) {
+  const cont = document.getElementById("indicadores-scroll");
+  try {
+    const { actual, cambios } = await apiFetch(`/kpis/resumen?${params.toString()}`);
+
+    const items = [
+      { icono: "👥", etiqueta: "Leads", valor: actual.leads_total, cambio: cambios.leads_total },
+      { icono: "🚶", etiqueta: "Cobertura", valor: `${actual.cobertura_pct}%`, cambio: cambios.cobertura_pct },
+      { icono: "💬", etiqueta: "Contactos", valor: actual.contactos_total, cambio: cambios.contactos_total },
+      { icono: "🧾", etiqueta: "Pedidos", valor: actual.pedidos_total, cambio: cambios.pedidos_total },
+      { icono: "💰", etiqueta: "Ventas", valor: formatoMoneda(actual.ventas_monto), cambio: cambios.ventas_monto },
+      { icono: "📈", etiqueta: "Conversión", valor: `${actual.conversion_pct}%`, cambio: cambios.conversion_pct },
+    ];
+
+    cont.innerHTML = items.map((it) => `
+      <div class="indicador-item">
+        <div class="indicador-top">${it.icono} ${it.etiqueta}</div>
+        <p class="indicador-valor">${it.valor}</p>
+        ${renderTendencia(it.cambio)}
+      </div>
+    `).join("");
+  } catch (err) {
+    console.error("Error al cargar el resumen de indicadores:", err.message);
+    cont.innerHTML = `<div class="indicador-item"><p class="descripcion">No se pudo cargar el resumen.</p></div>`;
+  }
+}
+
+/** cambio null = periodo anterior en 0, no hay porcentaje matematicamente valido. */
+function renderTendencia(cambio) {
+  if (cambio === null) {
+    return `<span class="indicador-tendencia sin-dato">Sin dato del mes anterior</span>`;
+  }
+  if (cambio === 0) {
+    return `<span class="indicador-tendencia sin-dato">Sin cambio</span>`;
+  }
+  const clase = cambio > 0 ? "subio" : "bajo";
+  const flecha = cambio > 0 ? "↑" : "↓";
+  return `<span class="indicador-tendencia ${clase}">${cambio > 0 ? "+" : ""}${cambio}% ${flecha}</span>`;
+}
+
 let graficoDiarioInstancia = null;
 
-async function cargarSerieDiaria() {
+async function cargarSerieDiaria(params) {
   try {
-    const serie = await apiFetch("/kpis/serie-diaria");
+    const qs = params ? params.toString() : paramsFiltrosDashboard().toString();
+    const serie = await apiFetch(`/kpis/serie-diaria?${qs}`);
 
     const labels = serie.map((d) => d.dia);
     const visitas = serie.map((d) => d.visitas);

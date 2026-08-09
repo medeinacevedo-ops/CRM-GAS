@@ -708,3 +708,40 @@ form button:hover { background: #236360; }
   line-height: 1.4;
 }
 #reportes-filtro-bases { min-width: 220px; }
+
+/* ---------- MINI-RESUMEN DE INDICADORES (LEADS/COBERTURA/CONTACTOS/...) ---------- */
+.indicadores-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  padding: 4px 0;
+  margin-bottom: 24px;
+  overflow-x: auto;
+}
+.indicadores-scroll {
+  display: flex;
+  min-width: max-content;
+}
+.indicador-item {
+  flex: 1 0 150px;
+  padding: 14px 20px;
+  border-left: 1px solid var(--border);
+}
+.indicador-item:first-child { border-left: none; }
+.indicador-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.indicador-valor { font-size: 21px; font-weight: 700; color: var(--navy-2); margin: 0 0 4px; }
+.indicador-tendencia { font-size: 12px; font-weight: 600; }
+.indicador-tendencia.subio { color: #1e7a52; }
+.indicador-tendencia.bajo { color: var(--coral); }
+.indicador-tendencia.sin-dato { color: var(--text-muted); font-weight: 500; }
