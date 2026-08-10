@@ -796,3 +796,17 @@ form button:hover { background: #236360; }
 }
 .multiselect-opcion:hover { background: #f4f6f8; }
 .multiselect-opcion input { cursor: pointer; }
+
+/* ---------- CORREGIR JORNADAS ---------- */
+.checkbox-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+  margin-top: 10px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.checkbox-inline input { margin-top: 2px; cursor: pointer; }
+.badge.editado { background: #fdf3d9; color: #8a6a00; }

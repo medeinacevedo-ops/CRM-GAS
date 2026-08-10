@@ -123,6 +123,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.vista === "permisos") cargarPermisos();
     if (btn.dataset.vista === "ubicacion") cargarPantallaUbicacion();
     if (btn.dataset.vista === "reportes-export") cargarPantallaReportesExport();
+    if (btn.dataset.vista === "jornadas-admin") cargarPantallaJornadasAdmin();
   });
 });
 
@@ -1969,6 +1970,152 @@ async function descargarReporteCsv(btn) {
     btn.textContent = textoOriginal;
   }
 }
+
+// ---------------------------------------------------------------------
+// CORREGIR JORNADAS (admin) -- ingreso/salida marcados por error
+// ---------------------------------------------------------------------
+let filtrosJornadasInicializados = false;
+
+async function cargarPantallaJornadasAdmin() {
+  if (!filtrosJornadasInicializados) {
+    try {
+      const usuarios = await apiFetch("/usuarios?rol=vendedor");
+      document.getElementById("jor-filtro-vendedor").innerHTML =
+        `<option value="">Todos los vendedores</option>` +
+        usuarios.map((u) => `<option value="${u.id}">${u.nombre}</option>`).join("");
+    } catch (err) {
+      console.error("Error al cargar vendedores para jornadas:", err.message);
+    }
+    filtrosJornadasInicializados = true;
+  }
+  cargarTablaJornadas();
+}
+
+document.getElementById("btn-jor-filtrar").addEventListener("click", cargarTablaJornadas);
+
+/** "2026-08-09 14:32:10" (MySQL) -> "14:32" solo hora, para la tabla. */
+function soloHora(fechaHoraMysql) {
+  if (!fechaHoraMysql) return "—";
+  return fechaHoraMysql.slice(11, 16);
+}
+
+/** minutos -> "7h 32m", igual criterio visual que el resto del panel. */
+function formatoDuracionMin(minutos) {
+  if (minutos === null || minutos === undefined) return "En curso";
+  const h = Math.floor(minutos / 60);
+  const m = Math.round(minutos % 60);
+  return `${h}h ${m}m`;
+}
+
+/** "2026-08-09 14:32:10" (MySQL) -> "2026-08-09T14:32" (input datetime-local). */
+function mysqlADatetimeLocal(fechaHoraMysql) {
+  if (!fechaHoraMysql) return "";
+  return fechaHoraMysql.slice(0, 16).replace(" ", "T");
+}
+
+/** "2026-08-09T14:32" (input datetime-local) -> "2026-08-09 14:32:00" (MySQL). */
+function datetimeLocalAMysql(valor) {
+  if (!valor) return null;
+  return valor.replace("T", " ") + ":00";
+}
+
+async function cargarTablaJornadas() {
+  const params = new URLSearchParams();
+  const vendedorId = document.getElementById("jor-filtro-vendedor").value;
+  const desde = document.getElementById("jor-filtro-desde").value;
+  const hasta = document.getElementById("jor-filtro-hasta").value;
+  if (vendedorId) params.set("vendedor_id", vendedorId);
+  if (desde) params.set("desde", desde);
+  if (hasta) params.set("hasta", hasta);
+
+  const tbody = document.getElementById("tabla-jornadas-admin");
+  try {
+    const jornadas = await apiFetch(`/jornada/admin?${params.toString()}`);
+    tbody.innerHTML =
+      jornadas
+        .map(
+          (j) => `
+      <tr data-jornada='${JSON.stringify(j).replace(/'/g, "&apos;")}'>
+        <td>${j.fecha}</td>
+        <td>${j.vendedor}</td>
+        <td>${soloHora(j.hora_ingreso)}</td>
+        <td>${j.hora_salida ? soloHora(j.hora_salida) : "En curso"}</td>
+        <td>${formatoDuracionMin(j.tiempo_activo_total)}</td>
+        <td>${j.total_pausas}</td>
+        <td>${j.editado_por ? `<span class="badge editado">Editado por ${j.editado_por}</span>` : "—"}</td>
+        <td>
+          <button class="btn-icono btn-editar-jornada" title="Corregir">✏️</button>
+          ${j.hora_salida ? `<button class="btn-icono btn-reabrir-jornada" title="Reabrir (deshacer marcar salida)">↺</button>` : ""}
+        </td>
+      </tr>`
+        )
+        .join("") || `<tr><td colspan="8">Sin jornadas para este filtro</td></tr>`;
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8">Error al cargar: ${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById("tabla-jornadas-admin").addEventListener("click", async (e) => {
+  const fila = e.target.closest("tr");
+  if (!fila) return;
+  const jornada = JSON.parse(fila.dataset.jornada.replace(/&apos;/g, "'"));
+
+  if (e.target.classList.contains("btn-editar-jornada")) {
+    abrirModalJornada(jornada);
+  }
+
+  if (e.target.classList.contains("btn-reabrir-jornada")) {
+    if (!confirm(`¿Reabrir la jornada de ${jornada.vendedor} del ${jornada.fecha}? Se borrará la hora de salida.`)) return;
+    try {
+      await apiFetch(`/jornada/admin/${jornada.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ hora_salida: null }),
+      });
+      cargarTablaJornadas();
+    } catch (err) {
+      alert(`Error al reabrir: ${err.message}`);
+    }
+  }
+});
+
+function abrirModalJornada(jornada) {
+  document.getElementById("jor-id").value = jornada.id;
+  document.getElementById("jor-modal-contexto").textContent = `${jornada.vendedor} — ${jornada.fecha}`;
+  document.getElementById("jor-ingreso-input").value = mysqlADatetimeLocal(jornada.hora_ingreso);
+  document.getElementById("jor-salida-input").value = mysqlADatetimeLocal(jornada.hora_salida);
+  document.getElementById("jor-reabrir-check").checked = false;
+  document.getElementById("jor-mensaje").textContent = "";
+  document.getElementById("modal-jornada").classList.remove("oculto");
+}
+
+document.getElementById("btn-cancelar-jornada").addEventListener("click", () => {
+  document.getElementById("modal-jornada").classList.add("oculto");
+});
+
+document.getElementById("jor-reabrir-check").addEventListener("change", (e) => {
+  document.getElementById("jor-salida-input").disabled = e.target.checked;
+});
+
+document.getElementById("form-jornada").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const id = document.getElementById("jor-id").value;
+  const reabrir = document.getElementById("jor-reabrir-check").checked;
+  const mensajeEl = document.getElementById("jor-mensaje");
+
+  const body = {
+    hora_ingreso: datetimeLocalAMysql(document.getElementById("jor-ingreso-input").value),
+    hora_salida: reabrir ? null : datetimeLocalAMysql(document.getElementById("jor-salida-input").value),
+  };
+
+  try {
+    await apiFetch(`/jornada/admin/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+    document.getElementById("modal-jornada").classList.add("oculto");
+    cargarTablaJornadas();
+  } catch (err) {
+    mensajeEl.textContent = err.message;
+    mensajeEl.classList.add("error");
+  }
+});
 
 // ---------------------------------------------------------------------
 // NOTIFICACIONES: campana con contador + toast en vivo via Socket.IO

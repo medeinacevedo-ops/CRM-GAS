@@ -170,6 +170,117 @@ async function marcarSalida(req, res) {
 }
 
 /**
+ * Lista jornadas para el panel admin, con filtros opcionales de
+ * vendedor y rango de fechas -- pantalla de "Corregir jornadas".
+ */
+async function listarJornadasAdmin(req, res) {
+  const { vendedor_id, desde, hasta } = req.query;
+  const condiciones = [];
+  const valores = [];
+
+  if (vendedor_id) {
+    condiciones.push("j.vendedor_id = ?");
+    valores.push(vendedor_id);
+  }
+  if (desde) {
+    condiciones.push("j.fecha >= ?");
+    valores.push(desde);
+  }
+  if (hasta) {
+    condiciones.push("j.fecha <= ?");
+    valores.push(hasta);
+  }
+  const where = condiciones.length > 0 ? `WHERE ${condiciones.join(" AND ")}` : "";
+
+  try {
+    const [jornadas] = await pool.query(
+      `SELECT j.id, j.vendedor_id, u.nombre AS vendedor, j.fecha, j.hora_ingreso, j.hora_salida,
+              j.tiempo_activo_total, j.editado_en, ea.nombre AS editado_por,
+              (SELECT COUNT(*) FROM registros_pausas rp WHERE rp.jornada_id = j.id) AS total_pausas
+       FROM jornadas j
+       JOIN usuarios u ON u.id = j.vendedor_id
+       LEFT JOIN usuarios ea ON ea.id = j.editado_por_admin_id
+       ${where}
+       ORDER BY j.fecha DESC, u.nombre
+       LIMIT 200`,
+      valores
+    );
+    res.json(jornadas);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al listar jornadas" });
+  }
+}
+
+/**
+ * Corrige una jornada manualmente (admin). Pensado para el caso típico:
+ * un vendedor marcó salida por error (antes de tiempo, o directamente
+ * sin querer). Soporta dos usos con el mismo endpoint:
+ *
+ *   1. Corregir horas: { hora_ingreso, hora_salida } con los valores
+ *      correctos -- recalcula tiempo_activo_total restando las pausas
+ *      registradas en esa jornada.
+ *   2. "Reabrir" la jornada: { hora_salida: null } -- la deja como si
+ *      el vendedor nunca hubiera marcado salida, para que el flujo
+ *      normal de la app siga funcionando (puede seguir marcando pausas
+ *      y, cuando de verdad termine, marcar salida él mismo).
+ *
+ * Todo cambio queda registrado en editado_por_admin_id / editado_en.
+ */
+async function editarJornadaAdmin(req, res) {
+  const { id } = req.params;
+  const { hora_ingreso, hora_salida } = req.body;
+  const adminId = req.usuario.id;
+
+  try {
+    const [[jornada]] = await pool.query(`SELECT id, fecha FROM jornadas WHERE id = ?`, [id]);
+    if (!jornada) return res.status(404).json({ error: "Jornada no encontrada" });
+
+    const nuevoIngreso = hora_ingreso || null;
+    // hora_salida puede venir como string (corregir) o null explicito (reabrir).
+    // Si la clave ni siquiera viene en el body, no se toca.
+    const tocaSalida = Object.prototype.hasOwnProperty.call(req.body, "hora_salida");
+
+    const sets = ["editado_por_admin_id = ?", "editado_en = NOW()"];
+    const valores = [adminId];
+
+    if (hora_ingreso) {
+      sets.push("hora_ingreso = ?");
+      valores.push(hora_ingreso);
+    }
+
+    if (tocaSalida) {
+      if (hora_salida === null) {
+        sets.push("hora_salida = NULL", "tiempo_activo_total = NULL");
+      } else {
+        // Recalcula el tiempo activo con la hora de ingreso nueva (si se
+        // mandó) o la que ya tenía, restando las pausas de esa jornada.
+        const [[segundosPausas]] = await pool.query(
+          `SELECT COALESCE(SUM(TIMESTAMPDIFF(SECOND, hora_inicio, hora_fin)), 0) AS total
+           FROM registros_pausas WHERE jornada_id = ? AND hora_fin IS NOT NULL`,
+          [id]
+        );
+        sets.push("hora_salida = ?");
+        valores.push(hora_salida);
+        sets.push(
+          `tiempo_activo_total = ROUND((TIMESTAMPDIFF(SECOND, ${nuevoIngreso ? "?" : "hora_ingreso"}, ?) - ?) / 60)`
+        );
+        if (nuevoIngreso) valores.push(nuevoIngreso);
+        valores.push(hora_salida, segundosPausas.total);
+      }
+    }
+
+    valores.push(id);
+    await pool.query(`UPDATE jornadas SET ${sets.join(", ")} WHERE id = ?`, valores);
+
+    res.json({ success: true, mensaje: "Jornada actualizada" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al corregir la jornada" });
+  }
+}
+
+/**
  * Obtiene el estado actual de la jornada del vendedor (Ingresado, Pausa, etc.)
  */
 async function getEstadoJornada(req, res) {
@@ -292,4 +403,13 @@ async function getMisActividades(req, res) {
   }
 }
 
-module.exports = { marcarIngreso, iniciarPausa, finalizarPausa, marcarSalida, getEstadoJornada, getMisActividades };
+module.exports = {
+  marcarIngreso,
+  iniciarPausa,
+  finalizarPausa,
+  marcarSalida,
+  getEstadoJornada,
+  getMisActividades,
+  listarJornadasAdmin,
+  editarJornadaAdmin,
+};

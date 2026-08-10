@@ -7,7 +7,9 @@ const {
   finalizarPausa,
   marcarSalida,
   getEstadoJornada,
-  getMisActividades
+  getMisActividades,
+  listarJornadasAdmin,
+  editarJornadaAdmin,
 } = require("../controllers/jornadaController");
 
 router.get("/estado", requireAuth, requireRole("vendedor", "admin"), getEstadoJornada);
@@ -16,5 +18,9 @@ router.post("/ingreso", requireAuth, requireRole("vendedor", "admin"), marcarIng
 router.post("/pausa/iniciar", requireAuth, requireRole("vendedor", "admin"), iniciarPausa);
 router.post("/pausa/finalizar", requireAuth, requireRole("vendedor", "admin"), finalizarPausa);
 router.post("/salida", requireAuth, requireRole("vendedor", "admin"), marcarSalida);
+
+// Corrección manual de jornadas (admin) -- ver jornadaController.editarJornadaAdmin
+router.get("/admin", requireAuth, requireRole("admin"), listarJornadasAdmin);
+router.patch("/admin/:id", requireAuth, requireRole("admin"), editarJornadaAdmin);
 
 module.exports = router;

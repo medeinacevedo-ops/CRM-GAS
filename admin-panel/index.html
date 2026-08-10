@@ -135,6 +135,10 @@
               <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
               <span>Exportar reportes</span>
             </button>
+            <button class="nav-item" data-vista="jornadas-admin">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              <span>Corregir jornadas</span>
+            </button>
           </div>
         </div>
       </nav>
@@ -674,6 +678,55 @@
             <h3>Visitas (todas)</h3>
             <p>Todas las visitas, no solo las cerradas — incluye no interesado, reagendar, no ubicado.</p>
             <button class="btn-primario btn-exportar" data-reporte="visitas">Descargar CSV</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Corregir jornadas -->
+      <section id="panel-jornadas-admin" class="panel oculto">
+        <div class="panel-header">
+          <h2>Corregir jornadas</h2>
+        </div>
+        <p class="descripcion">Si un vendedor marcó ingreso o salida por error, corrígelo aquí. "Reabrir" deja la jornada como si nunca hubiera marcado salida, para que pueda seguir trabajando normalmente y marcarla él mismo más tarde.</p>
+
+        <div class="filtros-visitas">
+          <select id="jor-filtro-vendedor"><option value="">Todos los vendedores</option></select>
+          <input type="date" id="jor-filtro-desde" title="Desde">
+          <input type="date" id="jor-filtro-hasta" title="Hasta">
+          <button id="btn-jor-filtrar" class="btn-secundario">Filtrar</button>
+        </div>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>Fecha</th><th>Vendedor</th><th>Ingreso</th><th>Salida</th><th>Tiempo activo</th><th>Pausas</th><th>Editado</th><th></th></tr>
+          </thead>
+          <tbody id="tabla-jornadas-admin"></tbody>
+        </table>
+
+        <div id="modal-jornada" class="modal oculto">
+          <div class="modal-card">
+            <h3>Corregir jornada</h3>
+            <p id="jor-modal-contexto" class="descripcion"></p>
+            <form id="form-jornada">
+              <input type="hidden" id="jor-id">
+
+              <label for="jor-ingreso-input">Hora de ingreso</label>
+              <input type="datetime-local" id="jor-ingreso-input" required>
+
+              <label for="jor-salida-input">Hora de salida</label>
+              <input type="datetime-local" id="jor-salida-input">
+
+              <label class="checkbox-inline">
+                <input type="checkbox" id="jor-reabrir-check">
+                Dejar la jornada abierta (borra la hora de salida, como si aún no hubiera marcado salida)
+              </label>
+
+              <div class="modal-acciones">
+                <button type="button" id="btn-cancelar-jornada" class="btn-secundario">Cancelar</button>
+                <button type="submit">Guardar</button>
+              </div>
+            </form>
+            <p id="jor-mensaje" class="mensaje"></p>
           </div>
         </div>
       </section>
