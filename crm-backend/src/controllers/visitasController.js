@@ -186,17 +186,19 @@ async function listarVisitasAdmin(req, res) {
     );
 
     const [rows] = await pool.query(
-      `SELECT v.id, v.fecha, v.resultado, v.notas, v.distancia_al_cliente_m,
+      `SELECT v.id, v.lead_id, v.fecha, v.resultado, v.notas, v.distancia_al_cliente_m,
               lb.nombre AS cliente, lb.direccion,
               u.nombre AS vendedor, u.id AS vendedor_id,
               z.nombre AS zona,
-              ve.producto, ve.monto
+              ve.producto, ve.monto,
+              v.editado_en, ea.nombre AS editado_por
        FROM visitas v
        JOIN leads l ON l.id = v.lead_id
        JOIN leads_base lb ON lb.id = l.lead_base_id
        JOIN usuarios u ON u.id = v.vendedor_id
        LEFT JOIN zonas z ON z.id = l.zona_id
        LEFT JOIN ventas ve ON ve.visita_id = v.id
+       LEFT JOIN usuarios ea ON ea.id = v.editado_por_admin_id
        ${where}
        ORDER BY v.fecha DESC
        LIMIT ? OFFSET ?`,
@@ -234,4 +236,126 @@ async function getVisitsByLead(req, res) {
   }
 }
 
-module.exports = { registrarVisita, listarVisitasAdmin, getVisitsByLead };
+/**
+ * Recalcula el estado de un lead a partir de su visita más reciente.
+ * Se usa después de que el admin corrige o reasigna una visita, para que
+ * `leads.estado` (y por lo tanto los KPIs y el listado del vendedor)
+ * siempre reflejen la última visita real, sin quedar desincronizados.
+ */
+async function recalcularEstadoLead(conn, leadId) {
+  const [[ultimaVisita]] = await conn.query(
+    `SELECT resultado FROM visitas WHERE lead_id = ? ORDER BY fecha DESC LIMIT 1`,
+    [leadId]
+  );
+
+  let nuevoEstado;
+  if (!ultimaVisita) {
+    // Ya no le queda ninguna visita a este lead (por ejemplo, se le "quitó"
+    // su única visita al reasignarla a otro cliente): vuelve a quedar
+    // como asignado, disponible para que el vendedor lo visite de nuevo.
+    nuevoEstado = "asignado";
+  } else if (ultimaVisita.resultado === "venta_cerrada") {
+    nuevoEstado = "vendido";
+  } else if (ultimaVisita.resultado === "no_interesado") {
+    nuevoEstado = "descartado";
+  } else {
+    nuevoEstado = "contactado";
+  }
+
+  await conn.query(`UPDATE leads SET estado = ? WHERE id = ?`, [nuevoEstado, leadId]);
+}
+
+/**
+ * Corrige una visita ya registrada (admin). Cubre los errores típicos que
+ * comete un vendedor en campo:
+ *   - Resultado equivocado (ej. marcó "no interesado" y en realidad fue venta).
+ *   - Producto/monto de la venta mal digitado.
+ *   - Notas incompletas o con errores.
+ *   - Visita registrada sobre el cliente/lead equivocado (reasignación).
+ *
+ * Si el resultado cambia hacia o desde 'venta_cerrada', ajusta la tabla
+ * `ventas` (crea, actualiza o elimina el registro según corresponda) y
+ * recalcula el estado del/los lead(s) afectados. Todo dentro de una
+ * transacción para no dejar el estado de venta/lead inconsistente.
+ */
+async function editarVisitaAdmin(req, res) {
+  const { id } = req.params;
+  const { lead_id, resultado, producto, monto, notas } = req.body;
+  const adminId = req.usuario.id;
+
+  if (!resultado) return res.status(400).json({ error: "resultado es requerido" });
+
+  const resultadoDB = normalizarResultado(resultado);
+  if (resultadoDB === "venta_cerrada" && (!producto || !monto)) {
+    return res.status(400).json({ error: "producto y monto son requeridos cuando el resultado es venta cerrada" });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    const [[visita]] = await conn.query(`SELECT id, lead_id, vendedor_id FROM visitas WHERE id = ?`, [id]);
+    if (!visita) {
+      conn.release();
+      return res.status(404).json({ error: "Visita no encontrada" });
+    }
+
+    let leadIdFinal = visita.lead_id;
+    const seReasigna = lead_id && String(lead_id) !== String(visita.lead_id);
+
+    if (seReasigna) {
+      // El nuevo lead debe pertenecer al MISMO vendedor que hizo la visita:
+      // reasignar es para corregir "tocó el cliente equivocado en la app",
+      // no para mover la visita a la cartera de otro vendedor.
+      const [[nuevoLead]] = await conn.query(
+        `SELECT id FROM leads WHERE id = ? AND vendedor_id = ?`,
+        [lead_id, visita.vendedor_id]
+      );
+      if (!nuevoLead) {
+        conn.release();
+        return res.status(404).json({ error: "El cliente indicado no existe en la cartera de este vendedor" });
+      }
+      leadIdFinal = lead_id;
+    }
+
+    await conn.beginTransaction();
+
+    await conn.query(
+      `UPDATE visitas SET
+         lead_id = ?, resultado = ?, notas = ?,
+         editado_por_admin_id = ?, editado_en = NOW()
+       WHERE id = ?`,
+      [leadIdFinal, resultadoDB, notas ?? null, adminId, id]
+    );
+
+    const [[ventaExistente]] = await conn.query(`SELECT id FROM ventas WHERE visita_id = ?`, [id]);
+
+    if (resultadoDB === "venta_cerrada") {
+      if (ventaExistente) {
+        await conn.query(`UPDATE ventas SET producto = ?, monto = ? WHERE visita_id = ?`, [producto, monto, id]);
+      } else {
+        await conn.query(`INSERT INTO ventas (visita_id, producto, monto) VALUES (?, ?, ?)`, [id, producto, monto]);
+      }
+    } else if (ventaExistente) {
+      // El resultado dejó de ser venta cerrada: ya no debe quedar un
+      // registro de venta huérfano.
+      await conn.query(`DELETE FROM ventas WHERE visita_id = ?`, [id]);
+    }
+
+    await recalcularEstadoLead(conn, leadIdFinal);
+    if (seReasigna) {
+      // El lead original se queda sin esta visita: su estado también
+      // puede cambiar (ej. si era su única visita, vuelve a "asignado").
+      await recalcularEstadoLead(conn, visita.lead_id);
+    }
+
+    await conn.commit();
+    res.json({ success: true, mensaje: "Visita corregida" });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ error: "Error al corregir la visita" });
+  } finally {
+    conn.release();
+  }
+}
+
+module.exports = { registrarVisita, listarVisitasAdmin, getVisitsByLead, editarVisitaAdmin };

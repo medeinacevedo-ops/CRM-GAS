@@ -124,6 +124,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.vista === "ubicacion") cargarPantallaUbicacion();
     if (btn.dataset.vista === "reportes-export") cargarPantallaReportesExport();
     if (btn.dataset.vista === "jornadas-admin") cargarPantallaJornadasAdmin();
+    if (btn.dataset.vista === "visitas-correccion") cargarPantallaVisitasCorreccion();
   });
 });
 
@@ -1527,6 +1528,183 @@ document.getElementById("btn-pagina-anterior").addEventListener("click", () => {
 document.getElementById("btn-pagina-siguiente").addEventListener("click", () => {
   paginaVisitasActual++;
   cargarVisitas();
+});
+
+// ---------------------------------------------------------------------
+// CORREGIR VISITAS / VENTAS (admin) -- resultado, producto, monto,
+// notas, o reasignar a otro cliente si se registró la visita equivocada.
+// ---------------------------------------------------------------------
+let paginaVisitasCorreccionActual = 1;
+let filtrosVisitasCorreccionInicializados = false;
+
+async function cargarPantallaVisitasCorreccion() {
+  if (!filtrosVisitasCorreccionInicializados) {
+    try {
+      const usuarios = await apiFetch("/usuarios?rol=vendedor");
+      document.getElementById("vc-filtro-vendedor").innerHTML =
+        `<option value="">Todos los vendedores</option>` +
+        usuarios.map((u) => `<option value="${u.id}">${u.nombre}</option>`).join("");
+    } catch (err) {
+      console.error("Error al cargar vendedores para corrección de visitas:", err.message);
+    }
+    filtrosVisitasCorreccionInicializados = true;
+  }
+  paginaVisitasCorreccionActual = 1;
+  cargarTablaVisitasCorreccion();
+}
+
+document.getElementById("btn-vc-filtrar").addEventListener("click", () => {
+  paginaVisitasCorreccionActual = 1;
+  cargarTablaVisitasCorreccion();
+});
+document.getElementById("btn-vc-pagina-anterior").addEventListener("click", () => {
+  if (paginaVisitasCorreccionActual > 1) {
+    paginaVisitasCorreccionActual--;
+    cargarTablaVisitasCorreccion();
+  }
+});
+document.getElementById("btn-vc-pagina-siguiente").addEventListener("click", () => {
+  paginaVisitasCorreccionActual++;
+  cargarTablaVisitasCorreccion();
+});
+
+async function cargarTablaVisitasCorreccion() {
+  const params = new URLSearchParams();
+  const vendedor = document.getElementById("vc-filtro-vendedor").value;
+  const resultado = document.getElementById("vc-filtro-resultado").value;
+  const desde = document.getElementById("vc-filtro-desde").value;
+  const hasta = document.getElementById("vc-filtro-hasta").value;
+  if (vendedor) params.set("vendedor_id", vendedor);
+  if (resultado) params.set("resultado", resultado);
+  if (desde) params.set("fecha_desde", desde);
+  if (hasta) params.set("fecha_hasta", hasta);
+  params.set("page", paginaVisitasCorreccionActual);
+  params.set("limit", 25);
+
+  const tbody = document.getElementById("tabla-visitas-correccion");
+  try {
+    const data = await apiFetch(`/visitas/admin?${params.toString()}`);
+
+    tbody.innerHTML =
+      data.resultados
+        .map(
+          (v) => `
+      <tr data-visita='${JSON.stringify(v).replace(/'/g, "&apos;")}'>
+        <td>${new Date(v.fecha).toLocaleString("es-PE")}</td>
+        <td>${v.vendedor}</td>
+        <td>${v.cliente}</td>
+        <td><span class="badge ${v.resultado}">${v.resultado.replace("_", " ")}</span></td>
+        <td>${v.producto || "—"}</td>
+        <td>${v.monto ? formatoMoneda(v.monto) : "—"}</td>
+        <td>${v.editado_por ? `<span class="badge editado">Editado por ${v.editado_por}</span>` : "—"}</td>
+        <td><button class="btn-icono btn-editar-visita-correccion" title="Corregir">✏️</button></td>
+      </tr>`
+        )
+        .join("") || `<tr><td colspan="8" style="color:var(--text-muted);">No hay visitas que coincidan con estos filtros.</td></tr>`;
+
+    const totalPaginas = Math.max(1, Math.ceil(data.total / data.limit));
+    document.getElementById("vc-info-paginacion").textContent =
+      `Página ${data.page} de ${totalPaginas} — ${data.total} visitas en total`;
+    document.getElementById("btn-vc-pagina-anterior").disabled = data.page <= 1;
+    document.getElementById("btn-vc-pagina-siguiente").disabled = data.page >= totalPaginas;
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8">Error al cargar: ${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById("tabla-visitas-correccion").addEventListener("click", (e) => {
+  if (!e.target.classList.contains("btn-editar-visita-correccion")) return;
+  const fila = e.target.closest("tr");
+  const visita = JSON.parse(fila.dataset.visita.replace(/&apos;/g, "'"));
+  abrirModalVisitaCorreccion(visita);
+});
+
+function toggleCamposVentaCorreccion() {
+  const esVenta = document.getElementById("vc-resultado-input").value === "venta_cerrada";
+  document.getElementById("vc-campos-venta").classList.toggle("oculto", !esVenta);
+  document.getElementById("vc-producto-input").required = esVenta;
+  document.getElementById("vc-monto-input").required = esVenta;
+}
+document.getElementById("vc-resultado-input").addEventListener("change", toggleCamposVentaCorreccion);
+
+document.getElementById("vc-reasignar-check").addEventListener("change", async (e) => {
+  const campo = document.getElementById("vc-campo-reasignar");
+  campo.classList.toggle("oculto", !e.target.checked);
+  if (!e.target.checked) return;
+
+  const vendedorId = document.getElementById("form-visita-correccion").dataset.vendedorId;
+  const leadActualId = document.getElementById("form-visita-correccion").dataset.leadId;
+  const select = document.getElementById("vc-reasignar-input");
+  select.innerHTML = `<option value="">Cargando...</option>`;
+  try {
+    const leads = await apiFetch(`/leads/de-vendedor/${vendedorId}`);
+    const opciones = leads.filter((l) => String(l.id) !== String(leadActualId));
+    select.innerHTML = opciones.length
+      ? opciones.map((l) => `<option value="${l.id}">${l.nombre} — ${l.direccion || "sin dirección"}</option>`).join("")
+      : `<option value="">Este vendedor no tiene otros clientes en su cartera</option>`;
+  } catch (err) {
+    select.innerHTML = `<option value="">Error al cargar clientes</option>`;
+    console.error("Error al cargar cartera del vendedor:", err.message);
+  }
+});
+
+function abrirModalVisitaCorreccion(visita) {
+  const form = document.getElementById("form-visita-correccion");
+  form.reset();
+  form.dataset.vendedorId = visita.vendedor_id;
+  form.dataset.leadId = visita.lead_id;
+
+  document.getElementById("vc-id").value = visita.id;
+  document.getElementById("vc-modal-contexto").textContent =
+    `${visita.vendedor} — ${visita.cliente} — ${new Date(visita.fecha).toLocaleString("es-PE")}`;
+  document.getElementById("vc-resultado-input").value = visita.resultado;
+  document.getElementById("vc-producto-input").value = visita.producto || "";
+  document.getElementById("vc-monto-input").value = visita.monto || "";
+  document.getElementById("vc-notas-input").value = visita.notas || "";
+  document.getElementById("vc-reasignar-check").checked = false;
+  document.getElementById("vc-campo-reasignar").classList.add("oculto");
+  document.getElementById("vc-reasignar-input").innerHTML = "";
+  document.getElementById("vc-mensaje").textContent = "";
+
+  toggleCamposVentaCorreccion();
+  document.getElementById("modal-visita-correccion").classList.remove("oculto");
+}
+
+document.getElementById("btn-cancelar-visita-correccion").addEventListener("click", () => {
+  document.getElementById("modal-visita-correccion").classList.add("oculto");
+});
+
+document.getElementById("form-visita-correccion").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const id = document.getElementById("vc-id").value;
+  const mensaje = document.getElementById("vc-mensaje");
+  mensaje.textContent = "";
+  mensaje.classList.remove("error");
+
+  const reasignar = document.getElementById("vc-reasignar-check").checked;
+  const nuevoLeadId = document.getElementById("vc-reasignar-input").value;
+  if (reasignar && !nuevoLeadId) {
+    mensaje.textContent = "Selecciona a qué cliente reasignar la visita.";
+    mensaje.classList.add("error");
+    return;
+  }
+
+  const payload = {
+    resultado: document.getElementById("vc-resultado-input").value,
+    producto: document.getElementById("vc-producto-input").value || null,
+    monto: document.getElementById("vc-monto-input").value || null,
+    notas: document.getElementById("vc-notas-input").value || null,
+  };
+  if (reasignar) payload.lead_id = nuevoLeadId;
+
+  try {
+    await apiFetch(`/visitas/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+    document.getElementById("modal-visita-correccion").classList.add("oculto");
+    cargarTablaVisitasCorreccion();
+  } catch (err) {
+    mensaje.textContent = err.message;
+    mensaje.classList.add("error");
+  }
 });
 
 // ---------------------------------------------------------------------

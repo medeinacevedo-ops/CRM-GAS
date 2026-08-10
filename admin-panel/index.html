@@ -149,6 +149,10 @@
               <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
               <span>Corregir jornadas</span>
             </button>
+            <button class="nav-item" data-vista="visitas-correccion">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M21 12v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/></svg>
+              <span>Corregir visitas</span>
+            </button>
           </div>
         </div>
       </nav>
@@ -737,6 +741,84 @@
               </div>
             </form>
             <p id="jor-mensaje" class="mensaje"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Corregir visitas / ventas -->
+      <section id="panel-visitas-correccion" class="panel oculto">
+        <div class="panel-header">
+          <h2>Corregir visitas</h2>
+        </div>
+        <p class="descripcion">Corrige el resultado, producto, monto o notas de una visita ya registrada. Si el vendedor tocó el cliente equivocado en la app, también puedes reasignar la visita a otro cliente de su misma cartera.</p>
+
+        <div class="filtros-visitas">
+          <select id="vc-filtro-vendedor"><option value="">Todos los vendedores</option></select>
+          <select id="vc-filtro-resultado">
+            <option value="">Todos los resultados</option>
+            <option value="venta_cerrada">Venta cerrada</option>
+            <option value="no_interesado">No interesado</option>
+            <option value="reagendar">Reagendar</option>
+            <option value="no_ubicado">No ubicado</option>
+          </select>
+          <input type="date" id="vc-filtro-desde" title="Desde">
+          <input type="date" id="vc-filtro-hasta" title="Hasta">
+          <button id="btn-vc-filtrar" class="btn-secundario">Filtrar</button>
+        </div>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>Fecha</th><th>Vendedor</th><th>Cliente</th><th>Resultado</th><th>Producto</th><th>Monto</th><th>Editado</th><th></th></tr>
+          </thead>
+          <tbody id="tabla-visitas-correccion"></tbody>
+        </table>
+
+        <div class="paginacion">
+          <button id="btn-vc-pagina-anterior" class="btn-secundario">← Anterior</button>
+          <span id="vc-info-paginacion"></span>
+          <button id="btn-vc-pagina-siguiente" class="btn-secundario">Siguiente →</button>
+        </div>
+
+        <div id="modal-visita-correccion" class="modal oculto">
+          <div class="modal-card">
+            <h3>Corregir visita</h3>
+            <p id="vc-modal-contexto" class="descripcion"></p>
+            <form id="form-visita-correccion">
+              <input type="hidden" id="vc-id">
+
+              <label for="vc-resultado-input">Resultado</label>
+              <select id="vc-resultado-input" required>
+                <option value="venta_cerrada">Venta cerrada</option>
+                <option value="no_interesado">No interesado</option>
+                <option value="reagendar">Reagendar</option>
+                <option value="no_ubicado">No ubicado</option>
+              </select>
+
+              <div id="vc-campos-venta">
+                <label for="vc-producto-input">Producto</label>
+                <input type="text" id="vc-producto-input">
+
+                <label for="vc-monto-input">Monto</label>
+                <input type="number" id="vc-monto-input" step="0.01" min="0">
+              </div>
+
+              <label for="vc-notas-input">Notas</label>
+              <textarea id="vc-notas-input" rows="3"></textarea>
+
+              <label class="label-checkbox">
+                <input type="checkbox" id="vc-reasignar-check"> Esta visita fue registrada sobre el cliente equivocado
+              </label>
+              <div id="vc-campo-reasignar" class="oculto">
+                <label for="vc-reasignar-input">Reasignar a este cliente (misma cartera del vendedor)</label>
+                <select id="vc-reasignar-input"><option value="">Cargando...</option></select>
+              </div>
+
+              <div class="modal-acciones">
+                <button type="button" id="btn-cancelar-visita-correccion" class="btn-secundario">Cancelar</button>
+                <button type="submit">Guardar</button>
+              </div>
+            </form>
+            <p id="vc-mensaje" class="mensaje"></p>
           </div>
         </div>
       </section>

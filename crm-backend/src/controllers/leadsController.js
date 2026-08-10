@@ -194,6 +194,29 @@ async function misLeads(req, res) {
   res.json(rows);
 }
 
+/**
+ * Cartera de un vendedor especifico, vista por el admin -- se usa para
+ * el selector de "reasignar a otro cliente" al corregir una visita mal
+ * registrada (Principal > Corregir visitas).
+ */
+async function leadsDeVendedor(req, res) {
+  const { vendedorId } = req.params;
+  try {
+    const [rows] = await pool.query(
+      `SELECT l.id, lb.nombre, lb.direccion, l.estado
+       FROM leads l
+       JOIN leads_base lb ON lb.id = l.lead_base_id
+       WHERE l.vendedor_id = ?
+       ORDER BY lb.nombre`,
+      [vendedorId]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al listar los clientes del vendedor" });
+  }
+}
+
 async function resumenCarga(req, res) {
   const { id } = req.params;
   const [rows] = await pool.query("SELECT COUNT(*) as total FROM leads_base WHERE carga_id = ?", [id]);
@@ -374,5 +397,6 @@ async function actualizarLead(req, res) {
 module.exports = {
   cargarBase, listarCargas, generarLeadsOperativos, repartirAutomatico,
   misLeads, resumenCarga, zonasConDisponiblesDeCarga, vendedoresDeZonaParaAsignar,
-  asignarIndividual, resumenZonasCarga, crearLeadProspecto, actualizarLead
+  asignarIndividual, resumenZonasCarga, crearLeadProspecto, actualizarLead,
+  leadsDeVendedor,
 };
