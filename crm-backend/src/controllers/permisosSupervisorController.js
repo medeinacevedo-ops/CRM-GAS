@@ -99,16 +99,53 @@ async function revocarPermiso(req, res) {
 
 async function actualizarPermiso(req, res) {
   const { id } = req.params;
-  const { puede_ver_kpis, puede_ver_ubicacion, activo } = req.body;
+  const { puede_ver_kpis, puede_ver_ubicacion, activo, zona_id, vendedor_id } = req.body;
+
+  // El alcance (zona vs vendedor) es opcional en la edición: solo se valida
+  // y se reemplaza si el request trae explícitamente alguno de los dos campos.
+  const cambiaAlcance = zona_id !== undefined || vendedor_id !== undefined;
+
+  if (cambiaAlcance) {
+    if (!zona_id && !vendedor_id) {
+      return res.status(400).json({ error: "Debes indicar zona_id o vendedor_id (uno de los dos)" });
+    }
+    if (zona_id && vendedor_id) {
+      return res.status(400).json({ error: "Indica solo zona_id O vendedor_id, no ambos" });
+    }
+    if (zona_id) {
+      const [[zona]] = await pool.query(`SELECT id FROM zonas WHERE id = ?`, [zona_id]);
+      if (!zona) return res.status(404).json({ error: "Zona no encontrada" });
+    }
+    if (vendedor_id) {
+      const [[vendedor]] = await pool.query(
+        `SELECT id FROM usuarios WHERE id = ? AND rol = 'vendedor'`,
+        [vendedor_id]
+      );
+      if (!vendedor) return res.status(404).json({ error: "Vendedor no encontrado" });
+    }
+  }
+
   try {
-    await pool.query(
-      `UPDATE permisos_supervisor SET
-         puede_ver_kpis = COALESCE(?, puede_ver_kpis),
-         puede_ver_ubicacion = COALESCE(?, puede_ver_ubicacion),
-         activo = COALESCE(?, activo)
-       WHERE id = ?`,
-      [puede_ver_kpis, puede_ver_ubicacion, activo, id]
+    const campos = [
+      "puede_ver_kpis = COALESCE(?, puede_ver_kpis)",
+      "puede_ver_ubicacion = COALESCE(?, puede_ver_ubicacion)",
+      "activo = COALESCE(?, activo)",
+    ];
+    const valores = [puede_ver_kpis, puede_ver_ubicacion, activo];
+
+    if (cambiaAlcance) {
+      campos.push("zona_id = ?", "vendedor_id = ?");
+      valores.push(zona_id || null, vendedor_id || null);
+    }
+
+    valores.push(id);
+
+    const [result] = await pool.query(
+      `UPDATE permisos_supervisor SET ${campos.join(", ")} WHERE id = ?`,
+      valores
     );
+    if (result.affectedRows === 0) return res.status(404).json({ error: "Permiso no encontrado" });
+
     res.json({ mensaje: "Permiso actualizado" });
   } catch (err) {
     console.error(err);

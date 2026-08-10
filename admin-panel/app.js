@@ -1555,6 +1555,9 @@ async function cargarPermisos() {
           <td>${p.puede_ver_ubicacion ? "Sí" : "No"}</td>
           <td>${p.otorgado_por || "—"}</td>
           <td>
+            <button class="btn-icono" data-accion="editar" data-id="${p.id}" title="Editar" aria-label="Editar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </button>
             <button class="btn-icono peligro" data-accion="revocar" data-id="${p.id}" title="Revocar" aria-label="Revocar">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
             </button>
@@ -1566,20 +1569,35 @@ async function cargarPermisos() {
     tbody.querySelectorAll("[data-accion='revocar']").forEach((btn) => {
       btn.addEventListener("click", () => revocarPermisoConfirmar(btn.dataset.id, btn));
     });
+    tbody.querySelectorAll("[data-accion='editar']").forEach((btn) => {
+      const permiso = permisos.find((p) => String(p.id) === btn.dataset.id);
+      btn.addEventListener("click", () => abrirModalPermiso(permiso));
+    });
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="6">Error al cargar permisos: ${err.message}</td></tr>`;
   }
 }
 
-async function abrirModalPermiso() {
+async function abrirModalPermiso(permisoExistente) {
   formPermiso.reset();
   document.getElementById("permiso-mensaje").textContent = "";
   document.getElementById("campo-permiso-zona").classList.remove("oculto");
   document.getElementById("campo-permiso-vendedor").classList.add("oculto");
 
+  // Modo edición: guardamos el id en el form y bloqueamos el cambio de supervisor
+  // (el supervisor titular del permiso no cambia; lo que se corrige es su alcance).
+  formPermiso.dataset.editandoId = permisoExistente ? permisoExistente.id : "";
+
+  const modalTitulo = document.querySelector("#modal-permiso h3");
+  const botonSubmit = formPermiso.querySelector("button[type='submit']");
   const selectSup = document.getElementById("permiso-supervisor-input");
   const selectZona = document.getElementById("permiso-zona-input");
   const selectVendedor = document.getElementById("permiso-vendedor-input");
+  const selectAlcance = document.getElementById("permiso-alcance-tipo");
+
+  if (modalTitulo) modalTitulo.textContent = permisoExistente ? "Editar permiso" : "Otorgar permiso";
+  if (botonSubmit) botonSubmit.textContent = permisoExistente ? "Guardar cambios" : "Otorgar";
+
   selectSup.innerHTML = `<option value="">Cargando...</option>`;
   selectZona.innerHTML = `<option value="">Cargando...</option>`;
   selectVendedor.innerHTML = `<option value="">Cargando...</option>`;
@@ -1599,14 +1617,32 @@ async function abrirModalPermiso() {
 
     selectZona.innerHTML = zonas.map((z) => `<option value="${z.id}">${z.nombre}</option>`).join("");
     selectVendedor.innerHTML = vendedores.map((v) => `<option value="${v.id}">${v.nombre}</option>`).join("");
+
+    if (permisoExistente) {
+      selectSup.value = permisoExistente.supervisor_id;
+      selectSup.disabled = true;
+
+      const esVendedor = !!permisoExistente.vendedor_id;
+      selectAlcance.value = esVendedor ? "vendedor" : "zona";
+      document.getElementById("campo-permiso-zona").classList.toggle("oculto", esVendedor);
+      document.getElementById("campo-permiso-vendedor").classList.toggle("oculto", !esVendedor);
+      if (esVendedor) selectVendedor.value = permisoExistente.vendedor_id;
+      else selectZona.value = permisoExistente.zona_id;
+
+      document.getElementById("permiso-kpis-input").checked = !!permisoExistente.puede_ver_kpis;
+      document.getElementById("permiso-ubicacion-input").checked = !!permisoExistente.puede_ver_ubicacion;
+    } else {
+      selectSup.disabled = false;
+    }
   } catch (err) {
     console.error("Error al preparar el formulario de permisos:", err.message);
   }
 }
 
-document.getElementById("btn-nuevo-permiso").addEventListener("click", abrirModalPermiso);
+document.getElementById("btn-nuevo-permiso").addEventListener("click", () => abrirModalPermiso());
 document.getElementById("btn-cancelar-permiso").addEventListener("click", () => {
   modalPermiso.classList.add("oculto");
+  document.getElementById("permiso-supervisor-input").disabled = false;
 });
 
 document.getElementById("permiso-alcance-tipo").addEventListener("change", (e) => {
@@ -1622,6 +1658,7 @@ formPermiso.addEventListener("submit", async (e) => {
   mensaje.classList.remove("error");
 
   const esZona = document.getElementById("permiso-alcance-tipo").value === "zona";
+  const editandoId = formPermiso.dataset.editandoId;
   const payload = {
     supervisor_id: document.getElementById("permiso-supervisor-input").value,
     zona_id: esZona ? document.getElementById("permiso-zona-input").value : null,
@@ -1631,7 +1668,12 @@ formPermiso.addEventListener("submit", async (e) => {
   };
 
   try {
-    await apiFetch("/permisos-supervisor", { method: "POST", body: JSON.stringify(payload) });
+    if (editandoId) {
+      // En edición no se reenvía supervisor_id (el backend no lo usa en el PUT).
+      await apiFetch(`/permisos-supervisor/${editandoId}`, { method: "PUT", body: JSON.stringify(payload) });
+    } else {
+      await apiFetch("/permisos-supervisor", { method: "POST", body: JSON.stringify(payload) });
+    }
     modalPermiso.classList.add("oculto");
     cargarPermisos();
   } catch (err) {
