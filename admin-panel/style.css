@@ -197,7 +197,7 @@ body {
 }
 .sidebar-footer button:hover { border-color: var(--coral); color: white; }
 
-.contenido { padding: 36px 40px; max-width: 760px; }
+.contenido { padding: 36px 40px; max-width: 1400px; }
 
 .panel h2 { margin: 0 0 6px; font-size: 20px; color: var(--navy-2); }
 .descripcion { color: var(--text-muted); font-size: 13.5px; margin: 0 0 20px; max-width: 560px; }
