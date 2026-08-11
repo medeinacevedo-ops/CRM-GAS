@@ -403,6 +403,143 @@ async function getMisActividades(req, res) {
   }
 }
 
+/**
+ * Lista los registros de pausas para el panel admin, con filtros opcionales
+ * de vendedor y rango de fechas -- pantalla "Principal > Corregir pausas".
+ */
+async function listarPausasAdmin(req, res) {
+  const { vendedor_id, desde, hasta } = req.query;
+  const condiciones = [];
+  const valores = [];
+
+  if (vendedor_id) {
+    condiciones.push("j.vendedor_id = ?");
+    valores.push(vendedor_id);
+  }
+  if (desde) {
+    condiciones.push("j.fecha >= ?");
+    valores.push(desde);
+  }
+  if (hasta) {
+    condiciones.push("j.fecha <= ?");
+    valores.push(hasta);
+  }
+  const where = condiciones.length > 0 ? `WHERE ${condiciones.join(" AND ")}` : "";
+
+  try {
+    const [pausas] = await pool.query(
+      `SELECT rp.id, rp.jornada_id, rp.hora_inicio, rp.hora_fin, rp.editado_en,
+              j.fecha, j.vendedor_id, u.nombre AS vendedor,
+              cp.id AS pausa_id, cp.nombre AS motivo,
+              ea.nombre AS editado_por
+       FROM registros_pausas rp
+       JOIN jornadas j ON j.id = rp.jornada_id
+       JOIN usuarios u ON u.id = j.vendedor_id
+       JOIN catalogo_pausas cp ON cp.id = rp.pausa_id
+       LEFT JOIN usuarios ea ON ea.id = rp.editado_por_admin_id
+       ${where}
+       ORDER BY rp.hora_inicio DESC
+       LIMIT 200`,
+      valores
+    );
+    res.json(pausas);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al listar las pausas" });
+  }
+}
+
+/**
+ * Recalcula tiempo_activo_total de una jornada ya cerrada, restando el
+ * total de pausas actualizado. Se usa después de corregir o eliminar una
+ * pausa, para que el tiempo activo no quede desincronizado con la
+ * corrección. Si la jornada sigue abierta (sin hora_salida) no hay nada
+ * que recalcular -- se recalculará solo cuando el vendedor marque salida.
+ */
+async function recalcularTiempoActivoJornada(jornadaId) {
+  const [[jornada]] = await pool.query(
+    `SELECT hora_ingreso, hora_salida FROM jornadas WHERE id = ?`,
+    [jornadaId]
+  );
+  if (!jornada || !jornada.hora_salida) return;
+
+  const [[segundosPausas]] = await pool.query(
+    `SELECT COALESCE(SUM(TIMESTAMPDIFF(SECOND, hora_inicio, hora_fin)), 0) AS total
+     FROM registros_pausas WHERE jornada_id = ? AND hora_fin IS NOT NULL`,
+    [jornadaId]
+  );
+
+  await pool.query(
+    `UPDATE jornadas SET
+       tiempo_activo_total = ROUND((TIMESTAMPDIFF(SECOND, hora_ingreso, hora_salida) - ?) / 60)
+     WHERE id = ?`,
+    [segundosPausas.total, jornadaId]
+  );
+}
+
+/**
+ * Corrige un registro de pausa: motivo (catálogo), hora de inicio y/o
+ * hora de fin. Cubre los errores típicos: el vendedor eligió el motivo
+ * equivocado, o se le olvidó finalizar la pausa (hora_fin queda NULL
+ * indefinidamente, bloqueándolo para marcar salida).
+ */
+async function editarPausaAdmin(req, res) {
+  const { id } = req.params;
+  const { pausa_id, hora_inicio, hora_fin } = req.body;
+  const adminId = req.usuario.id;
+
+  try {
+    const [[pausa]] = await pool.query(`SELECT id, jornada_id FROM registros_pausas WHERE id = ?`, [id]);
+    if (!pausa) return res.status(404).json({ error: "Registro de pausa no encontrado" });
+
+    const tocaFin = Object.prototype.hasOwnProperty.call(req.body, "hora_fin");
+    const sets = ["editado_por_admin_id = ?", "editado_en = NOW()"];
+    const valores = [adminId];
+
+    if (pausa_id) {
+      sets.push("pausa_id = ?");
+      valores.push(pausa_id);
+    }
+    if (hora_inicio) {
+      sets.push("hora_inicio = ?");
+      valores.push(hora_inicio);
+    }
+    if (tocaFin) {
+      sets.push("hora_fin = ?");
+      valores.push(hora_fin || null);
+    }
+
+    valores.push(id);
+    await pool.query(`UPDATE registros_pausas SET ${sets.join(", ")} WHERE id = ?`, valores);
+    await recalcularTiempoActivoJornada(pausa.jornada_id);
+
+    res.json({ success: true, mensaje: "Pausa corregida" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al corregir la pausa" });
+  }
+}
+
+/**
+ * Elimina un registro de pausa duplicado o creado por error (ej. el
+ * vendedor tocó dos veces el botón de pausa por mala señal).
+ */
+async function eliminarPausaAdmin(req, res) {
+  const { id } = req.params;
+  try {
+    const [[pausa]] = await pool.query(`SELECT id, jornada_id FROM registros_pausas WHERE id = ?`, [id]);
+    if (!pausa) return res.status(404).json({ error: "Registro de pausa no encontrado" });
+
+    await pool.query(`DELETE FROM registros_pausas WHERE id = ?`, [id]);
+    await recalcularTiempoActivoJornada(pausa.jornada_id);
+
+    res.json({ success: true, mensaje: "Pausa eliminada" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al eliminar la pausa" });
+  }
+}
+
 module.exports = {
   marcarIngreso,
   iniciarPausa,
@@ -412,4 +549,7 @@ module.exports = {
   getMisActividades,
   listarJornadasAdmin,
   editarJornadaAdmin,
+  listarPausasAdmin,
+  editarPausaAdmin,
+  eliminarPausaAdmin,
 };

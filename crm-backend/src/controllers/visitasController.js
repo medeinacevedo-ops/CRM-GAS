@@ -358,4 +358,38 @@ async function editarVisitaAdmin(req, res) {
   }
 }
 
-module.exports = { registrarVisita, listarVisitasAdmin, getVisitsByLead, editarVisitaAdmin };
+/**
+ * Elimina por completo una visita duplicada o mal registrada (ej. el
+ * vendedor registró la misma visita dos veces por mala señal). Borra
+ * también la venta asociada si la había, y recalcula el estado del
+ * lead para que quede reflejando la visita real restante (o vuelva a
+ * "asignado" si esa era su única visita).
+ */
+async function eliminarVisitaAdmin(req, res) {
+  const { id } = req.params;
+
+  const conn = await pool.getConnection();
+  try {
+    const [[visita]] = await conn.query(`SELECT id, lead_id FROM visitas WHERE id = ?`, [id]);
+    if (!visita) {
+      conn.release();
+      return res.status(404).json({ error: "Visita no encontrada" });
+    }
+
+    await conn.beginTransaction();
+    await conn.query(`DELETE FROM ventas WHERE visita_id = ?`, [id]);
+    await conn.query(`DELETE FROM visitas WHERE id = ?`, [id]);
+    await recalcularEstadoLead(conn, visita.lead_id);
+    await conn.commit();
+
+    res.json({ success: true, mensaje: "Visita eliminada" });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ error: "Error al eliminar la visita" });
+  } finally {
+    conn.release();
+  }
+}
+
+module.exports = { registrarVisita, listarVisitasAdmin, getVisitsByLead, editarVisitaAdmin, eliminarVisitaAdmin };

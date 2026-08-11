@@ -239,6 +239,18 @@ form button:hover { background: #236360; }
 }
 .btn-secundario:hover { border-color: var(--teal); color: var(--teal); }
 
+.btn-peligro {
+  padding: 7px 14px;
+  background: white;
+  border: 1px solid var(--coral);
+  border-radius: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+  color: var(--coral);
+  margin-right: auto;
+}
+.btn-peligro:hover { background: var(--coral); color: white; }
+
 .mensaje { font-size: 13px; margin-top: 14px; color: var(--teal); font-weight: 500; }
 .mensaje.error { color: var(--coral); }
 
@@ -338,6 +350,11 @@ form button:hover { background: #236360; }
 .badge.pendiente { background: #fdf3de; color: #a4741a; }
 .badge.confirmado { background: #e3f4ed; color: #1e7a52; }
 .badge.rechazado { background: #fbe7e4; color: var(--coral); }
+.badge.revertido { background: #f1e9fb; color: #6a3fb5; }
+.badge.asignado { background: #e6effa; color: var(--navy-2); }
+.badge.contactado { background: #fdf3de; color: #a4741a; }
+.badge.vendido { background: #e3f4ed; color: #1e7a52; }
+.badge.descartado { background: #f1f1f1; color: #888; }
 
 .enlace-accion {
   background: none;

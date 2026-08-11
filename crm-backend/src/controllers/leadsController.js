@@ -217,6 +217,110 @@ async function leadsDeVendedor(req, res) {
   }
 }
 
+/**
+ * Busca leads ya asignados, con filtros, para la pantalla
+ * "Principal > Reasignar leads" -- distinto de misLeads (que es la
+ * cartera propia del vendedor) y de zonasConDisponiblesDeCarga (que
+ * trabaja sobre leads sin asignar).
+ */
+async function buscarLeadsAdmin(req, res) {
+  const { vendedor_id, zona_id, estado, q } = req.query;
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(100, parseInt(req.query.limit) || 25);
+  const offset = (page - 1) * limit;
+
+  const condiciones = ["l.vendedor_id IS NOT NULL"];
+  const valores = [];
+
+  if (vendedor_id) {
+    condiciones.push("l.vendedor_id = ?");
+    valores.push(vendedor_id);
+  }
+  if (zona_id) {
+    condiciones.push("l.zona_id = ?");
+    valores.push(zona_id);
+  }
+  if (estado) {
+    condiciones.push("l.estado = ?");
+    valores.push(estado);
+  }
+  if (q) {
+    condiciones.push("(lb.nombre LIKE ? OR lb.telefono LIKE ?)");
+    valores.push(`%${q}%`, `%${q}%`);
+  }
+  const where = `WHERE ${condiciones.join(" AND ")}`;
+
+  try {
+    const [[{ total }]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM leads l JOIN leads_base lb ON lb.id = l.lead_base_id ${where}`,
+      valores
+    );
+
+    const [rows] = await pool.query(
+      `SELECT l.id, l.estado, l.fecha_asignacion,
+              lb.nombre AS cliente, lb.telefono, lb.direccion,
+              u.id AS vendedor_id, u.nombre AS vendedor,
+              z.id AS zona_id, z.nombre AS zona
+       FROM leads l
+       JOIN leads_base lb ON lb.id = l.lead_base_id
+       LEFT JOIN usuarios u ON u.id = l.vendedor_id
+       LEFT JOIN zonas z ON z.id = l.zona_id
+       ${where}
+       ORDER BY l.fecha_asignacion DESC
+       LIMIT ? OFFSET ?`,
+      [...valores, limit, offset]
+    );
+
+    res.json({ total, page, limit, resultados: rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al buscar leads" });
+  }
+}
+
+/**
+ * Reasigna un lead directamente a otro vendedor -- corrección de un
+ * error de asignación, sin pasar por el flujo de intercambio (que
+ * requiere que ambos vendedores confirmen). Queda registrado en
+ * `asignaciones` con tipo 'manual' para mantener trazabilidad.
+ */
+async function reasignarLeadAdmin(req, res) {
+  const { id } = req.params;
+  const { vendedor_id } = req.body;
+  const adminId = req.usuario.id;
+
+  if (!vendedor_id) return res.status(400).json({ error: "vendedor_id es requerido" });
+
+  try {
+    const [[lead]] = await pool.query(`SELECT id, vendedor_id FROM leads WHERE id = ?`, [id]);
+    if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
+
+    const [[vendedor]] = await pool.query(
+      `SELECT id FROM usuarios WHERE id = ? AND rol = 'vendedor' AND activo = 1`,
+      [vendedor_id]
+    );
+    if (!vendedor) return res.status(404).json({ error: "Vendedor no encontrado o inactivo" });
+
+    if (String(lead.vendedor_id) === String(vendedor_id)) {
+      return res.status(400).json({ error: "El lead ya está asignado a ese vendedor" });
+    }
+
+    await pool.query(
+      `UPDATE leads SET vendedor_id = ?, fecha_asignacion = NOW() WHERE id = ?`,
+      [vendedor_id, id]
+    );
+    await pool.query(
+      `INSERT INTO asignaciones (lead_id, vendedor_id, asignado_por, tipo) VALUES (?, ?, ?, 'manual')`,
+      [id, vendedor_id, adminId]
+    );
+
+    res.json({ success: true, mensaje: "Lead reasignado" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al reasignar el lead" });
+  }
+}
+
 async function resumenCarga(req, res) {
   const { id } = req.params;
   const [rows] = await pool.query("SELECT COUNT(*) as total FROM leads_base WHERE carga_id = ?", [id]);
@@ -398,5 +502,5 @@ module.exports = {
   cargarBase, listarCargas, generarLeadsOperativos, repartirAutomatico,
   misLeads, resumenCarga, zonasConDisponiblesDeCarga, vendedoresDeZonaParaAsignar,
   asignarIndividual, resumenZonasCarga, crearLeadProspecto, actualizarLead,
-  leadsDeVendedor,
+  leadsDeVendedor, buscarLeadsAdmin, reasignarLeadAdmin,
 };

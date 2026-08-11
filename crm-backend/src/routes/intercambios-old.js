@@ -7,7 +7,6 @@ const {
   confirmarIntercambio,
   rechazarIntercambio,
   listarTodosIntercambios,
-  revertirIntercambio,
 } = require("../controllers/intercambiosController");
 
 router.post("/", requireAuth, requireRole("vendedor", "admin"), solicitarIntercambio);
@@ -15,10 +14,7 @@ router.get("/", requireAuth, requireRole("vendedor", "admin"), misIntercambios);
 router.post("/:id/confirmar", requireAuth, requireRole("vendedor", "admin"), confirmarIntercambio);
 router.post("/:id/rechazar", requireAuth, requireRole("vendedor", "admin"), rechazarIntercambio);
 
-// Visibilidad para el administrador: ve todos los intercambios.
+// Visibilidad para el administrador: ve todos los intercambios, no puede accionar sobre ellos.
 router.get("/todos", requireAuth, requireRole("admin"), listarTodosIntercambios);
-
-// Corrección: revertir un intercambio ya confirmado (Principal > Revertir intercambio)
-router.post("/:id/revertir", requireAuth, requireRole("admin"), revertirIntercambio);
 
 module.exports = router;

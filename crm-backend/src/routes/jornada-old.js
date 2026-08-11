@@ -10,9 +10,6 @@ const {
   getMisActividades,
   listarJornadasAdmin,
   editarJornadaAdmin,
-  listarPausasAdmin,
-  editarPausaAdmin,
-  eliminarPausaAdmin,
 } = require("../controllers/jornadaController");
 
 router.get("/estado", requireAuth, requireRole("vendedor", "admin"), getEstadoJornada);
@@ -25,10 +22,5 @@ router.post("/salida", requireAuth, requireRole("vendedor", "admin"), marcarSali
 // Corrección manual de jornadas (admin) -- ver jornadaController.editarJornadaAdmin
 router.get("/admin", requireAuth, requireRole("admin"), listarJornadasAdmin);
 router.patch("/admin/:id", requireAuth, requireRole("admin"), editarJornadaAdmin);
-
-// Corrección manual de pausas individuales (admin)
-router.get("/pausas-admin", requireAuth, requireRole("admin"), listarPausasAdmin);
-router.patch("/pausas-admin/:id", requireAuth, requireRole("admin"), editarPausaAdmin);
-router.delete("/pausas-admin/:id", requireAuth, requireRole("admin"), eliminarPausaAdmin);
 
 module.exports = router;

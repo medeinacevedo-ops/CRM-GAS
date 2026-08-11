@@ -125,6 +125,9 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.vista === "reportes-export") cargarPantallaReportesExport();
     if (btn.dataset.vista === "jornadas-admin") cargarPantallaJornadasAdmin();
     if (btn.dataset.vista === "visitas-correccion") cargarPantallaVisitasCorreccion();
+    if (btn.dataset.vista === "pausas-correccion") cargarPantallaPausasCorreccion();
+    if (btn.dataset.vista === "leads-reasignar") cargarPantallaLeadsReasignar();
+    if (btn.dataset.vista === "intercambios-revertir") cargarPantallaIntercambiosRevertir();
   });
 });
 
@@ -1706,6 +1709,308 @@ document.getElementById("form-visita-correccion").addEventListener("submit", asy
     mensaje.classList.add("error");
   }
 });
+
+// ---------------------------------------------------------------------
+// CORREGIR PAUSAS INDIVIDUALES (admin)
+// ---------------------------------------------------------------------
+let catalogoPausasCache = null;
+
+async function cargarPantallaPausasCorreccion() {
+  try {
+    const [usuarios, catalogo] = await Promise.all([
+      apiFetch("/usuarios?rol=vendedor"),
+      apiFetch("/catalogo-pausas"),
+    ]);
+    document.getElementById("pc-filtro-vendedor").innerHTML =
+      `<option value="">Todos los vendedores</option>` +
+      usuarios.map((u) => `<option value="${u.id}">${u.nombre}</option>`).join("");
+    catalogoPausasCache = catalogo;
+  } catch (err) {
+    console.error("Error al preparar corrección de pausas:", err.message);
+  }
+  cargarTablaPausasCorreccion();
+}
+
+document.getElementById("btn-pc-filtrar").addEventListener("click", cargarTablaPausasCorreccion);
+
+async function cargarTablaPausasCorreccion() {
+  const params = new URLSearchParams();
+  const vendedor = document.getElementById("pc-filtro-vendedor").value;
+  const desde = document.getElementById("pc-filtro-desde").value;
+  const hasta = document.getElementById("pc-filtro-hasta").value;
+  if (vendedor) params.set("vendedor_id", vendedor);
+  if (desde) params.set("desde", desde);
+  if (hasta) params.set("hasta", hasta);
+
+  const tbody = document.getElementById("tabla-pausas-correccion");
+  try {
+    const pausas = await apiFetch(`/jornada/pausas-admin?${params.toString()}`);
+    tbody.innerHTML =
+      pausas
+        .map(
+          (p) => `
+      <tr data-pausa='${JSON.stringify(p).replace(/'/g, "&apos;")}'>
+        <td>${p.vendedor}</td>
+        <td>${p.motivo}</td>
+        <td>${new Date(p.hora_inicio).toLocaleString("es-PE")}</td>
+        <td>${p.hora_fin ? new Date(p.hora_fin).toLocaleString("es-PE") : "— (sigue abierta)"}</td>
+        <td>${p.editado_por ? `<span class="badge editado">Editado por ${p.editado_por}</span>` : "—"}</td>
+        <td><button class="btn-icono btn-editar-pausa-correccion" title="Corregir">✏️</button></td>
+      </tr>`
+        )
+        .join("") || `<tr><td colspan="6" style="color:var(--text-muted);">No hay pausas que coincidan con estos filtros.</td></tr>`;
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6">Error al cargar: ${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById("tabla-pausas-correccion").addEventListener("click", (e) => {
+  if (!e.target.classList.contains("btn-editar-pausa-correccion")) return;
+  const fila = e.target.closest("tr");
+  const pausa = JSON.parse(fila.dataset.pausa.replace(/&apos;/g, "'"));
+  abrirModalPausaCorreccion(pausa);
+});
+
+function aFechaLocalInput(valor) {
+  if (!valor) return "";
+  const d = new Date(valor);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function abrirModalPausaCorreccion(pausa) {
+  const form = document.getElementById("form-pausa-correccion");
+  form.reset();
+  form.dataset.id = pausa.id;
+
+  document.getElementById("pc-id").value = pausa.id;
+  document.getElementById("pc-modal-contexto").textContent = `${pausa.vendedor}`;
+  document.getElementById("pc-motivo-input").innerHTML = (catalogoPausasCache || [])
+    .map((m) => `<option value="${m.id}" ${m.id === pausa.pausa_id ? "selected" : ""}>${m.nombre}</option>`)
+    .join("");
+  document.getElementById("pc-inicio-input").value = aFechaLocalInput(pausa.hora_inicio);
+  document.getElementById("pc-fin-input").value = aFechaLocalInput(pausa.hora_fin);
+  document.getElementById("pc-mensaje").textContent = "";
+
+  document.getElementById("modal-pausa-correccion").classList.remove("oculto");
+}
+
+document.getElementById("btn-cancelar-pausa-correccion").addEventListener("click", () => {
+  document.getElementById("modal-pausa-correccion").classList.add("oculto");
+});
+
+document.getElementById("btn-eliminar-pausa-correccion").addEventListener("click", async () => {
+  const id = document.getElementById("pc-id").value;
+  if (!confirm("¿Eliminar este registro de pausa? Esta acción no se puede deshacer.")) return;
+  const mensaje = document.getElementById("pc-mensaje");
+  try {
+    await apiFetch(`/jornada/pausas-admin/${id}`, { method: "DELETE" });
+    document.getElementById("modal-pausa-correccion").classList.add("oculto");
+    cargarTablaPausasCorreccion();
+  } catch (err) {
+    mensaje.textContent = err.message;
+    mensaje.classList.add("error");
+  }
+});
+
+document.getElementById("form-pausa-correccion").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const id = document.getElementById("pc-id").value;
+  const mensaje = document.getElementById("pc-mensaje");
+  mensaje.textContent = "";
+  mensaje.classList.remove("error");
+
+  const finInput = document.getElementById("pc-fin-input").value;
+  const payload = {
+    pausa_id: document.getElementById("pc-motivo-input").value,
+    hora_inicio: document.getElementById("pc-inicio-input").value,
+    hora_fin: finInput || null,
+  };
+
+  try {
+    await apiFetch(`/jornada/pausas-admin/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+    document.getElementById("modal-pausa-correccion").classList.add("oculto");
+    cargarTablaPausasCorreccion();
+  } catch (err) {
+    mensaje.textContent = err.message;
+    mensaje.classList.add("error");
+  }
+});
+
+// ---------------------------------------------------------------------
+// REASIGNAR LEADS DIRECTAMENTE (admin)
+// ---------------------------------------------------------------------
+let paginaLeadsReasignarActual = 1;
+let filtrosLeadsReasignarInicializados = false;
+let vendedoresCache = null;
+
+async function cargarPantallaLeadsReasignar() {
+  if (!filtrosLeadsReasignarInicializados) {
+    try {
+      const [usuarios, zonas] = await Promise.all([
+        apiFetch("/usuarios?rol=vendedor"),
+        apiFetch("/zonas"),
+      ]);
+      vendedoresCache = usuarios;
+      document.getElementById("lr-filtro-vendedor").innerHTML =
+        `<option value="">Todos los vendedores</option>` +
+        usuarios.map((u) => `<option value="${u.id}">${u.nombre}</option>`).join("");
+      document.getElementById("lr-filtro-zona").innerHTML =
+        `<option value="">Todas las zonas</option>` +
+        zonas.map((z) => `<option value="${z.id}">${z.nombre}</option>`).join("");
+    } catch (err) {
+      console.error("Error al preparar reasignación de leads:", err.message);
+    }
+    filtrosLeadsReasignarInicializados = true;
+  }
+  paginaLeadsReasignarActual = 1;
+  cargarTablaLeadsReasignar();
+}
+
+document.getElementById("btn-lr-filtrar").addEventListener("click", () => {
+  paginaLeadsReasignarActual = 1;
+  cargarTablaLeadsReasignar();
+});
+document.getElementById("btn-lr-pagina-anterior").addEventListener("click", () => {
+  if (paginaLeadsReasignarActual > 1) {
+    paginaLeadsReasignarActual--;
+    cargarTablaLeadsReasignar();
+  }
+});
+document.getElementById("btn-lr-pagina-siguiente").addEventListener("click", () => {
+  paginaLeadsReasignarActual++;
+  cargarTablaLeadsReasignar();
+});
+
+async function cargarTablaLeadsReasignar() {
+  const params = new URLSearchParams();
+  const vendedor = document.getElementById("lr-filtro-vendedor").value;
+  const zona = document.getElementById("lr-filtro-zona").value;
+  const estado = document.getElementById("lr-filtro-estado").value;
+  const q = document.getElementById("lr-filtro-q").value.trim();
+  if (vendedor) params.set("vendedor_id", vendedor);
+  if (zona) params.set("zona_id", zona);
+  if (estado) params.set("estado", estado);
+  if (q) params.set("q", q);
+  params.set("page", paginaLeadsReasignarActual);
+  params.set("limit", 25);
+
+  const tbody = document.getElementById("tabla-leads-reasignar");
+  try {
+    const data = await apiFetch(`/leads/buscar-admin?${params.toString()}`);
+    tbody.innerHTML =
+      data.resultados
+        .map(
+          (l) => `
+      <tr data-lead='${JSON.stringify(l).replace(/'/g, "&apos;")}'>
+        <td>${l.cliente}</td>
+        <td>${l.telefono || "—"}</td>
+        <td>${l.zona || "—"}</td>
+        <td>${l.vendedor || "—"}</td>
+        <td><span class="badge ${l.estado}">${l.estado}</span></td>
+        <td><button class="btn-icono btn-reasignar-lead" title="Reasignar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        </button></td>
+      </tr>`
+        )
+        .join("") || `<tr><td colspan="6" style="color:var(--text-muted);">No hay leads que coincidan con estos filtros.</td></tr>`;
+
+    const totalPaginas = Math.max(1, Math.ceil(data.total / data.limit));
+    document.getElementById("lr-info-paginacion").textContent =
+      `Página ${data.page} de ${totalPaginas} — ${data.total} leads en total`;
+    document.getElementById("btn-lr-pagina-anterior").disabled = data.page <= 1;
+    document.getElementById("btn-lr-pagina-siguiente").disabled = data.page >= totalPaginas;
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6">Error al cargar: ${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById("tabla-leads-reasignar").addEventListener("click", (e) => {
+  if (!e.target.closest(".btn-reasignar-lead")) return;
+  const fila = e.target.closest("tr");
+  const lead = JSON.parse(fila.dataset.lead.replace(/&apos;/g, "'"));
+  abrirModalLeadReasignar(lead);
+});
+
+function abrirModalLeadReasignar(lead) {
+  const form = document.getElementById("form-lead-reasignar");
+  form.reset();
+  document.getElementById("lr-id").value = lead.id;
+  document.getElementById("lr-modal-contexto").textContent =
+    `${lead.cliente} — actualmente con ${lead.vendedor || "sin asignar"}`;
+  document.getElementById("lr-vendedor-input").innerHTML = (vendedoresCache || [])
+    .filter((v) => String(v.id) !== String(lead.vendedor_id))
+    .map((v) => `<option value="${v.id}">${v.nombre}</option>`)
+    .join("");
+  document.getElementById("lr-mensaje").textContent = "";
+  document.getElementById("modal-lead-reasignar").classList.remove("oculto");
+}
+
+document.getElementById("btn-cancelar-lead-reasignar").addEventListener("click", () => {
+  document.getElementById("modal-lead-reasignar").classList.add("oculto");
+});
+
+document.getElementById("form-lead-reasignar").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const id = document.getElementById("lr-id").value;
+  const mensaje = document.getElementById("lr-mensaje");
+  mensaje.textContent = "";
+  mensaje.classList.remove("error");
+
+  try {
+    await apiFetch(`/leads/${id}/reasignar`, {
+      method: "PUT",
+      body: JSON.stringify({ vendedor_id: document.getElementById("lr-vendedor-input").value }),
+    });
+    document.getElementById("modal-lead-reasignar").classList.add("oculto");
+    cargarTablaLeadsReasignar();
+  } catch (err) {
+    mensaje.textContent = err.message;
+    mensaje.classList.add("error");
+  }
+});
+
+// ---------------------------------------------------------------------
+// REVERTIR INTERCAMBIO DE LEADS (admin)
+// ---------------------------------------------------------------------
+async function cargarPantallaIntercambiosRevertir() {
+  const tbody = document.getElementById("tabla-intercambios-revertir");
+  try {
+    const intercambios = await apiFetch("/intercambios/todos");
+    tbody.innerHTML =
+      intercambios
+        .map(
+          (i) => `
+      <tr>
+        <td>${new Date(i.fecha).toLocaleString("es-PE")}</td>
+        <td>${i.vendedor_origen}</td>
+        <td>${i.vendedor_destino}</td>
+        <td>${i.cantidad}</td>
+        <td><span class="badge ${i.estado}">${i.estado}</span></td>
+        <td>${
+          i.estado === "confirmado"
+            ? `<button class="btn-secundario btn-revertir-intercambio" data-id="${i.id}">Revertir</button>`
+            : ""
+        }</td>
+      </tr>`
+        )
+        .join("") || `<tr><td colspan="6" style="color:var(--text-muted);">No hay intercambios registrados.</td></tr>`;
+
+    tbody.querySelectorAll(".btn-revertir-intercambio").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Revertir este intercambio? Cada lote de leads volverá a su vendedor original.")) return;
+        try {
+          await apiFetch(`/intercambios/${btn.dataset.id}/revertir`, { method: "POST" });
+          cargarPantallaIntercambiosRevertir();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6">Error al cargar: ${err.message}</td></tr>`;
+  }
+}
 
 // ---------------------------------------------------------------------
 // PERMISOS DE SUPERVISOR

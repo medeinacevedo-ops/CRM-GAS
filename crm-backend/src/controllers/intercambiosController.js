@@ -179,7 +179,8 @@ async function listarTodosIntercambios(req, res) {
   try {
     const [rows] = await pool.query(
       `SELECT il.id, il.cantidad, il.estado, il.fecha,
-              uo.nombre AS vendedor_origen, ud.nombre AS vendedor_destino
+              uo.id AS vendedor_origen_id, uo.nombre AS vendedor_origen,
+              ud.id AS vendedor_destino_id, ud.nombre AS vendedor_destino
        FROM intercambios_leads il
        JOIN usuarios uo ON uo.id = il.vendedor_origen_id
        JOIN usuarios ud ON ud.id = il.vendedor_destino_id
@@ -192,10 +193,73 @@ async function listarTodosIntercambios(req, res) {
   }
 }
 
+/**
+ * Revierte un intercambio ya confirmado: devuelve cada lote de leads a
+ * su vendedor original (destino -> origen y viceversa) y marca el
+ * intercambio como 'revertido'. Para cuando el intercambio se hizo con
+ * información errónea y ya es tarde para simplemente "rechazarlo"
+ * (rechazar solo aplica mientras está pendiente).
+ */
+async function revertirIntercambio(req, res) {
+  const { id } = req.params;
+  const adminId = req.usuario.id;
+
+  const conn = await pool.getConnection();
+  try {
+    const [[intercambio]] = await conn.query(
+      `SELECT * FROM intercambios_leads WHERE id = ? FOR UPDATE`,
+      [id]
+    );
+    if (!intercambio) {
+      conn.release();
+      return res.status(404).json({ error: "Intercambio no encontrado" });
+    }
+    if (intercambio.estado !== "confirmado") {
+      conn.release();
+      return res.status(400).json({ error: "Solo se puede revertir un intercambio confirmado" });
+    }
+
+    const idsOfrecidos = (intercambio.leads_ofrecidos || "").split(",").filter(Boolean).map(Number);
+    const idsRecibidos = (intercambio.leads_recibidos || "").split(",").filter(Boolean).map(Number);
+
+    await conn.beginTransaction();
+
+    if (idsOfrecidos.length > 0) {
+      // Estos leads terminaron en manos del destino; vuelven al origen.
+      await conn.query(
+        `UPDATE leads SET vendedor_id = ?, fecha_asignacion = NOW() WHERE id IN (?)`,
+        [intercambio.vendedor_origen_id, idsOfrecidos]
+      );
+    }
+    if (idsRecibidos.length > 0) {
+      // Estos leads terminaron en manos del origen; vuelven al destino.
+      await conn.query(
+        `UPDATE leads SET vendedor_id = ?, fecha_asignacion = NOW() WHERE id IN (?)`,
+        [intercambio.vendedor_destino_id, idsRecibidos]
+      );
+    }
+
+    await conn.query(
+      `UPDATE intercambios_leads SET estado = 'revertido', revertido_por_admin_id = ?, revertido_en = NOW() WHERE id = ?`,
+      [adminId, id]
+    );
+
+    await conn.commit();
+    res.json({ success: true, mensaje: "Intercambio revertido" });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ error: "Error al revertir el intercambio" });
+  } finally {
+    conn.release();
+  }
+}
+
 module.exports = {
   solicitarIntercambio,
   misIntercambios,
   confirmarIntercambio,
   rechazarIntercambio,
   listarTodosIntercambios,
+  revertirIntercambio,
 };
