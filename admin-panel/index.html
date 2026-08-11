@@ -9,6 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -165,6 +166,22 @@
               <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 21H3v-5"/></svg>
               <span>Revertir intercambio</span>
             </button>
+            <button class="nav-item" data-vista="cargas-deshacer">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              <span>Deshacer carga</span>
+            </button>
+            <button class="nav-item" data-vista="cartera-reasignar">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span>Reasignar cartera completa</span>
+            </button>
+            <button class="nav-item" data-vista="leads-fusionar">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88"/><path d="M14.47 14.48L20 20"/><path d="M8.12 8.12L12 12"/></svg>
+              <span>Fusionar leads</span>
+            </button>
+            <button class="nav-item" data-vista="checkpoints-corregir">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 6-9 13-9 13s-9-7-9-13a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+              <span>Corregir ubicaciones</span>
+            </button>
           </div>
         </div>
       </nav>
@@ -246,10 +263,12 @@
       <section id="panel-cargar" class="panel oculto">
         <h2>Cargar base de clientes</h2>
         <p class="descripcion">Sube un archivo CSV con las columnas: <code>nombre,telefono,direccion,lat,lng,distrito</code>. Esta base queda guardada como historial y no se modifica luego.</p>
+        <button type="button" id="btn-descargar-plantilla" class="btn-secundario">⬇ Descargar plantilla Excel</button>
         <form id="form-cargar">
           <input type="file" id="archivo-csv" accept=".csv" required>
           <button type="submit">Subir archivo</button>
         </form>
+        <p class="descripcion" style="margin-top:4px;">La plantilla es en Excel para que sea fácil de llenar; antes de subirla, guárdala como <code>.csv</code> (Archivo → Guardar como → CSV).</p>
         <p id="cargar-mensaje" class="mensaje"></p>
       </section>
 
@@ -948,6 +967,104 @@
           </thead>
           <tbody id="tabla-intercambios-revertir"></tbody>
         </table>
+      </section>
+
+      <!-- Deshacer una carga de base -->
+      <section id="panel-cargas-deshacer" class="panel oculto">
+        <div class="panel-header">
+          <h2>Deshacer carga</h2>
+        </div>
+        <p class="descripcion">Elimina por completo una carga de base subida por error (nombre de archivo, leads generados y registro de carga). Solo se puede deshacer si ningún lead de esa carga fue asignado todavía a un vendedor.</p>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>ID</th><th>Archivo</th><th>Registros</th><th>Fecha</th><th></th></tr>
+          </thead>
+          <tbody id="tabla-cargas-deshacer"></tbody>
+        </table>
+      </section>
+
+      <!-- Reasignar cartera completa -->
+      <section id="panel-cartera-reasignar" class="panel oculto">
+        <div class="panel-header">
+          <h2>Reasignar cartera completa</h2>
+        </div>
+        <p class="descripcion">Mueve todos los leads de un vendedor a otro de una sola vez -- por ejemplo, cuando un vendedor deja de operar una zona.</p>
+
+        <form id="form-cartera-reasignar" style="max-width:420px;">
+          <label for="cr-origen-input">Vendedor de origen</label>
+          <select id="cr-origen-input" required></select>
+
+          <label for="cr-destino-input">Vendedor de destino</label>
+          <select id="cr-destino-input" required></select>
+
+          <label class="label-checkbox">
+            <input type="checkbox" id="cr-incluir-finalizados-input"> Incluir también los leads ya vendidos/descartados
+          </label>
+
+          <button type="submit">Reasignar cartera</button>
+        </form>
+        <p id="cr-mensaje" class="mensaje"></p>
+      </section>
+
+      <!-- Fusionar leads duplicados -->
+      <section id="panel-leads-fusionar" class="panel oculto">
+        <div class="panel-header">
+          <h2>Fusionar leads duplicados</h2>
+          <button id="btn-refrescar-duplicados" class="btn-secundario">Buscar duplicados</button>
+        </div>
+        <p class="descripcion">Detecta clientes cargados dos veces (mismo teléfono, o mismo nombre y dirección) y permite fusionarlos en uno solo. El historial de visitas y ventas de los leads eliminados pasa al lead que elijas como sobreviviente.</p>
+
+        <div id="lista-duplicados"></div>
+
+        <div id="modal-fusionar-leads" class="modal oculto">
+          <div class="modal-card">
+            <h3>Fusionar leads duplicados</h3>
+            <p class="descripcion">Elige cuál de estos leads es el correcto (sobreviviente). Los demás se eliminarán y su historial de visitas pasará al sobreviviente.</p>
+            <div id="fl-opciones"></div>
+            <div class="modal-acciones">
+              <button type="button" id="btn-cancelar-fusionar" class="btn-secundario">Cancelar</button>
+              <button type="button" id="btn-confirmar-fusionar">Fusionar</button>
+            </div>
+            <p id="fl-mensaje" class="mensaje"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Corregir ubicaciones (checkpoints GPS) -->
+      <section id="panel-checkpoints-corregir" class="panel oculto">
+        <div class="panel-header">
+          <h2>Corregir ubicaciones</h2>
+        </div>
+        <p class="descripcion">Elimina un checkpoint de ubicación puntual (ej. un salto de GPS por mala señal) que distorsiona el mapa de recorrido. No afecta visitas ni ventas.</p>
+
+        <div class="filtros-visitas">
+          <select id="cc-filtro-vendedor"><option value="">Todos los vendedores</option></select>
+          <input type="date" id="cc-filtro-fecha" title="Fecha">
+          <select id="cc-filtro-tipo">
+            <option value="">Todos los eventos</option>
+            <option value="ingreso">Ingreso</option>
+            <option value="visita">Visita</option>
+            <option value="break_inicio">Inicio de pausa</option>
+            <option value="break_fin">Fin de pausa</option>
+            <option value="heartbeat">Heartbeat</option>
+            <option value="salida">Salida</option>
+          </select>
+          <button id="btn-cc-filtrar" class="btn-secundario">Filtrar</button>
+        </div>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>Vendedor</th><th>Evento</th><th>Lat, Lng</th><th>Hora</th><th></th></tr>
+          </thead>
+          <tbody id="tabla-checkpoints-corregir"></tbody>
+        </table>
+
+        <div class="paginacion">
+          <button id="btn-cc-pagina-anterior" class="btn-secundario">← Anterior</button>
+          <span id="cc-info-paginacion"></span>
+          <button id="btn-cc-pagina-siguiente" class="btn-secundario">Siguiente →</button>
+        </div>
       </section>
 
     </main>

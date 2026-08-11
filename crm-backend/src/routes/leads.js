@@ -18,6 +18,11 @@ const {
   leadsDeVendedor,
   buscarLeadsAdmin,
   reasignarLeadAdmin,
+  previsualizarDeshacerCarga,
+  deshacerCarga,
+  reasignarCarteraCompleta,
+  detectarLeadsDuplicados,
+  fusionarLeadsDuplicados,
 } = require("../controllers/leadsController");
 
 const upload = multer({ dest: "uploads/" });
@@ -41,6 +46,17 @@ router.get("/de-vendedor/:vendedorId", requireAuth, requireRole("admin"), leadsD
 // Corrección: reasignación directa de leads (Principal > Reasignar leads)
 router.get("/buscar-admin", requireAuth, requireRole("admin"), buscarLeadsAdmin);
 router.put("/:id/reasignar", requireAuth, requireRole("admin"), reasignarLeadAdmin);
+
+// Corrección: deshacer una carga completa (Principal > Deshacer carga)
+router.get("/cargas/:id/deshacer-preview", requireAuth, requireRole("admin"), previsualizarDeshacerCarga);
+router.delete("/cargas/:id", requireAuth, requireRole("admin"), deshacerCarga);
+
+// Corrección: reasignar toda la cartera de un vendedor (Principal > Reasignar cartera completa)
+router.put("/reasignar-cartera", requireAuth, requireRole("admin"), reasignarCarteraCompleta);
+
+// Corrección: fusionar leads duplicados (Principal > Fusionar leads)
+router.get("/duplicados", requireAuth, requireRole("admin"), detectarLeadsDuplicados);
+router.post("/fusionar", requireAuth, requireRole("admin"), fusionarLeadsDuplicados);
 
 // El vendedor consulta su propia cartera y prospecta nuevos clientes
 router.get("/mis-leads", requireAuth, requireRole("vendedor", "admin"), misLeads);

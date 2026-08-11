@@ -128,6 +128,10 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.vista === "pausas-correccion") cargarPantallaPausasCorreccion();
     if (btn.dataset.vista === "leads-reasignar") cargarPantallaLeadsReasignar();
     if (btn.dataset.vista === "intercambios-revertir") cargarPantallaIntercambiosRevertir();
+    if (btn.dataset.vista === "cargas-deshacer") cargarPantallaCargasDeshacer();
+    if (btn.dataset.vista === "cartera-reasignar") cargarPantallaCarteraReasignar();
+    if (btn.dataset.vista === "leads-fusionar") cargarPantallaLeadsFusionar();
+    if (btn.dataset.vista === "checkpoints-corregir") cargarPantallaCheckpointsCorregir();
   });
 });
 
@@ -152,6 +156,18 @@ async function cargarZonasEnSelectores() {
 // ---------------------------------------------------------------------
 // CARGAR BASE (CSV)
 // ---------------------------------------------------------------------
+document.getElementById("btn-descargar-plantilla").addEventListener("click", () => {
+  const encabezados = ["nombre", "telefono", "direccion", "lat", "lng", "distrito"];
+  const filaEjemplo = ["Juana Pérez Ramos", "987654321", "Av. Los Álamos 245", "-12.046374", "-77.042793", "San Isidro"];
+
+  const hoja = XLSX.utils.aoa_to_sheet([encabezados, filaEjemplo]);
+  hoja["!cols"] = [{ wch: 25 }, { wch: 14 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 18 }];
+
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, "Base de clientes");
+  XLSX.writeFile(libro, "plantilla_base_clientes.xlsx");
+});
+
 document.getElementById("form-cargar").addEventListener("submit", async (e) => {
   e.preventDefault();
   const input = document.getElementById("archivo-csv");
@@ -2009,6 +2025,280 @@ async function cargarPantallaIntercambiosRevertir() {
     });
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="6">Error al cargar: ${err.message}</td></tr>`;
+  }
+}
+
+// ---------------------------------------------------------------------
+// DESHACER CARGA DE BASE (admin)
+// ---------------------------------------------------------------------
+async function cargarPantallaCargasDeshacer() {
+  const tbody = document.getElementById("tabla-cargas-deshacer");
+  try {
+    const cargas = await apiFetch("/leads/cargas");
+    tbody.innerHTML =
+      cargas
+        .map(
+          (c) => `
+      <tr>
+        <td>${c.id}</td>
+        <td>${c.nombre_archivo}</td>
+        <td>${c.total_registros}</td>
+        <td>${new Date(c.fecha_carga).toLocaleString("es-PE")}</td>
+        <td><button class="btn-secundario btn-deshacer-carga" data-id="${c.id}">Deshacer</button></td>
+      </tr>`
+        )
+        .join("") || `<tr><td colspan="5" style="color:var(--text-muted);">No hay cargas registradas.</td></tr>`;
+
+    tbody.querySelectorAll(".btn-deshacer-carga").forEach((btn) => {
+      btn.addEventListener("click", () => confirmarDeshacerCarga(btn.dataset.id));
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5">Error al cargar: ${err.message}</td></tr>`;
+  }
+}
+
+async function confirmarDeshacerCarga(cargaId) {
+  try {
+    const preview = await apiFetch(`/leads/cargas/${cargaId}/deshacer-preview`);
+    if (!preview.se_puede_deshacer) {
+      alert(
+        `No se puede deshacer esta carga: ${preview.leads_asignados} de sus ${preview.total_leads_generados} leads ya fueron asignados a un vendedor.`
+      );
+      return;
+    }
+    const ok = confirm(
+      `Esta carga generó ${preview.total_leads_generados} leads y ninguno fue asignado todavía. ¿Eliminarla por completo? Esta acción no se puede deshacer.`
+    );
+    if (!ok) return;
+
+    await apiFetch(`/leads/cargas/${cargaId}`, { method: "DELETE" });
+    cargarPantallaCargasDeshacer();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+// ---------------------------------------------------------------------
+// REASIGNAR CARTERA COMPLETA (admin)
+// ---------------------------------------------------------------------
+async function cargarPantallaCarteraReasignar() {
+  try {
+    const usuarios = await apiFetch("/usuarios?rol=vendedor");
+    const opciones = usuarios.map((u) => `<option value="${u.id}">${u.nombre}</option>`).join("");
+    document.getElementById("cr-origen-input").innerHTML = opciones;
+    document.getElementById("cr-destino-input").innerHTML = opciones;
+  } catch (err) {
+    console.error("Error al cargar vendedores para reasignación de cartera:", err.message);
+  }
+  document.getElementById("cr-mensaje").textContent = "";
+}
+
+document.getElementById("form-cartera-reasignar").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const mensaje = document.getElementById("cr-mensaje");
+  mensaje.textContent = "";
+  mensaje.classList.remove("error");
+
+  const origen = document.getElementById("cr-origen-input").value;
+  const destino = document.getElementById("cr-destino-input").value;
+  if (origen === destino) {
+    mensaje.textContent = "El vendedor de origen y destino no pueden ser el mismo.";
+    mensaje.classList.add("error");
+    return;
+  }
+  if (!confirm("¿Reasignar toda la cartera seleccionada? Esta acción afecta muchos leads a la vez.")) return;
+
+  try {
+    const data = await apiFetch("/leads/reasignar-cartera", {
+      method: "PUT",
+      body: JSON.stringify({
+        vendedor_origen_id: origen,
+        vendedor_destino_id: destino,
+        incluir_finalizados: document.getElementById("cr-incluir-finalizados-input").checked,
+      }),
+    });
+    mensaje.textContent = data.mensaje;
+    mensaje.classList.remove("error");
+  } catch (err) {
+    mensaje.textContent = err.message;
+    mensaje.classList.add("error");
+  }
+});
+
+// ---------------------------------------------------------------------
+// FUSIONAR LEADS DUPLICADOS (admin)
+// ---------------------------------------------------------------------
+async function cargarPantallaLeadsFusionar() {
+  document.getElementById("lista-duplicados").innerHTML = `<p class="descripcion">Presiona "Buscar duplicados" para analizar la base.</p>`;
+}
+
+document.getElementById("btn-refrescar-duplicados").addEventListener("click", async () => {
+  const contenedor = document.getElementById("lista-duplicados");
+  contenedor.innerHTML = `<p class="descripcion">Buscando...</p>`;
+  try {
+    const grupos = await apiFetch("/leads/duplicados");
+    if (grupos.length === 0) {
+      contenedor.innerHTML = `<p class="descripcion">No se encontraron duplicados.</p>`;
+      return;
+    }
+    contenedor.innerHTML = grupos
+      .map(
+        (g, i) => `
+      <div class="tarjeta-duplicado" data-grupo='${JSON.stringify(g).replace(/'/g, "&apos;")}'>
+        <p><strong>${g.clave}</strong> — ${g.leads.length} coincidencias</p>
+        <ul>
+          ${g.leads.map((l) => `<li>#${l.id} — ${l.nombre} — ${l.telefono || "sin teléfono"} — ${l.direccion || "sin dirección"} — <span class="badge ${l.estado}">${l.estado}</span> — ${l.vendedor || "sin vendedor"}</li>`).join("")}
+        </ul>
+        <button class="btn-secundario btn-fusionar-grupo" data-index="${i}">Fusionar este grupo</button>
+      </div>`
+      )
+      .join("");
+
+    contenedor.querySelectorAll(".btn-fusionar-grupo").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const grupo = JSON.parse(btn.closest(".tarjeta-duplicado").dataset.grupo.replace(/&apos;/g, "'"));
+        abrirModalFusionarLeads(grupo);
+      });
+    });
+  } catch (err) {
+    contenedor.innerHTML = `<p class="mensaje error">Error al buscar duplicados: ${err.message}</p>`;
+  }
+});
+
+function abrirModalFusionarLeads(grupo) {
+  const contenedor = document.getElementById("fl-opciones");
+  contenedor.innerHTML = grupo.leads
+    .map(
+      (l, i) => `
+    <label class="label-checkbox">
+      <input type="radio" name="fl-sobreviviente" value="${l.id}" ${i === 0 ? "checked" : ""}>
+      #${l.id} — ${l.nombre} — ${l.telefono || "sin teléfono"} — ${l.direccion || "sin dirección"} — ${l.vendedor || "sin vendedor"}
+    </label>`
+    )
+    .join("");
+  document.getElementById("modal-fusionar-leads").dataset.leadIds = grupo.leads.map((l) => l.id).join(",");
+  document.getElementById("fl-mensaje").textContent = "";
+  document.getElementById("modal-fusionar-leads").classList.remove("oculto");
+}
+
+document.getElementById("btn-cancelar-fusionar").addEventListener("click", () => {
+  document.getElementById("modal-fusionar-leads").classList.add("oculto");
+});
+
+document.getElementById("btn-confirmar-fusionar").addEventListener("click", async () => {
+  const modal = document.getElementById("modal-fusionar-leads");
+  const mensaje = document.getElementById("fl-mensaje");
+  const seleccionado = modal.querySelector("input[name='fl-sobreviviente']:checked");
+  if (!seleccionado) {
+    mensaje.textContent = "Selecciona cuál lead es el correcto.";
+    mensaje.classList.add("error");
+    return;
+  }
+  const todosIds = modal.dataset.leadIds.split(",").map(Number);
+  const sobrevivienteId = Number(seleccionado.value);
+  const aEliminar = todosIds.filter((id) => id !== sobrevivienteId);
+
+  if (!confirm(`Se eliminarán ${aEliminar.length} leads y su historial pasará al lead #${sobrevivienteId}. ¿Continuar?`)) return;
+
+  try {
+    const data = await apiFetch("/leads/fusionar", {
+      method: "POST",
+      body: JSON.stringify({ lead_sobreviviente_id: sobrevivienteId, lead_ids_a_eliminar: aEliminar }),
+    });
+    modal.classList.add("oculto");
+    document.getElementById("btn-refrescar-duplicados").click();
+  } catch (err) {
+    mensaje.textContent = err.message;
+    mensaje.classList.add("error");
+  }
+});
+
+// ---------------------------------------------------------------------
+// CORREGIR UBICACIONES / CHECKPOINTS GPS (admin)
+// ---------------------------------------------------------------------
+let paginaCheckpointsCorregirActual = 1;
+let filtrosCheckpointsCorregirInicializados = false;
+
+async function cargarPantallaCheckpointsCorregir() {
+  if (!filtrosCheckpointsCorregirInicializados) {
+    try {
+      const usuarios = await apiFetch("/usuarios?rol=vendedor");
+      document.getElementById("cc-filtro-vendedor").innerHTML =
+        `<option value="">Todos los vendedores</option>` +
+        usuarios.map((u) => `<option value="${u.id}">${u.nombre}</option>`).join("");
+    } catch (err) {
+      console.error("Error al preparar corrección de ubicaciones:", err.message);
+    }
+    filtrosCheckpointsCorregirInicializados = true;
+  }
+  paginaCheckpointsCorregirActual = 1;
+  cargarTablaCheckpointsCorregir();
+}
+
+document.getElementById("btn-cc-filtrar").addEventListener("click", () => {
+  paginaCheckpointsCorregirActual = 1;
+  cargarTablaCheckpointsCorregir();
+});
+document.getElementById("btn-cc-pagina-anterior").addEventListener("click", () => {
+  if (paginaCheckpointsCorregirActual > 1) {
+    paginaCheckpointsCorregirActual--;
+    cargarTablaCheckpointsCorregir();
+  }
+});
+document.getElementById("btn-cc-pagina-siguiente").addEventListener("click", () => {
+  paginaCheckpointsCorregirActual++;
+  cargarTablaCheckpointsCorregir();
+});
+
+async function cargarTablaCheckpointsCorregir() {
+  const params = new URLSearchParams();
+  const vendedor = document.getElementById("cc-filtro-vendedor").value;
+  const fecha = document.getElementById("cc-filtro-fecha").value;
+  const tipo = document.getElementById("cc-filtro-tipo").value;
+  if (vendedor) params.set("vendedor_id", vendedor);
+  if (fecha) params.set("fecha", fecha);
+  if (tipo) params.set("tipo_evento", tipo);
+  params.set("page", paginaCheckpointsCorregirActual);
+  params.set("limit", 50);
+
+  const tbody = document.getElementById("tabla-checkpoints-corregir");
+  try {
+    const data = await apiFetch(`/checkpoints?${params.toString()}`);
+    tbody.innerHTML =
+      data.resultados
+        .map(
+          (c) => `
+      <tr>
+        <td>${c.vendedor}</td>
+        <td><span class="badge ${c.tipo_evento}">${c.tipo_evento.replace("_", " ")}</span></td>
+        <td>${Number(c.lat).toFixed(5)}, ${Number(c.lng).toFixed(5)}</td>
+        <td>${new Date(c.hora).toLocaleString("es-PE")}</td>
+        <td><button class="btn-icono peligro btn-eliminar-checkpoint" data-id="${c.id}" title="Eliminar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+        </button></td>
+      </tr>`
+        )
+        .join("") || `<tr><td colspan="5" style="color:var(--text-muted);">No hay registros que coincidan con estos filtros.</td></tr>`;
+
+    const totalPaginas = Math.max(1, Math.ceil(data.total / data.limit));
+    document.getElementById("cc-info-paginacion").textContent =
+      `Página ${data.page} de ${totalPaginas} — ${data.total} registros en total`;
+    document.getElementById("btn-cc-pagina-anterior").disabled = data.page <= 1;
+    document.getElementById("btn-cc-pagina-siguiente").disabled = data.page >= totalPaginas;
+
+    tbody.querySelectorAll(".btn-eliminar-checkpoint").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar este punto del mapa de recorrido?")) return;
+        try {
+          await apiFetch(`/checkpoints/${btn.dataset.id}`, { method: "DELETE" });
+          cargarTablaCheckpointsCorregir();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5">Error al cargar: ${err.message}</td></tr>`;
   }
 }
 

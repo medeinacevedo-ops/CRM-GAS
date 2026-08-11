@@ -1,9 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const { requireAuth, requireRole } = require("../middleware/auth");
-const { listarCheckpoints, eliminarCheckpointAdmin } = require("../controllers/checkpointsController");
+const { listarCheckpoints } = require("../controllers/checkpointsController");
 
 router.get("/", requireAuth, requireRole("admin", "supervisor"), listarCheckpoints);
-router.delete("/:id", requireAuth, requireRole("admin"), eliminarCheckpointAdmin);
 
 module.exports = router;

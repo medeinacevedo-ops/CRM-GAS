@@ -251,6 +251,16 @@ form button:hover { background: #236360; }
 }
 .btn-peligro:hover { background: var(--coral); color: white; }
 
+.tarjeta-duplicado {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.tarjeta-duplicado ul { margin: 8px 0; padding-left: 18px; font-size: 13px; }
+.tarjeta-duplicado li { margin-bottom: 4px; }
+
 .mensaje { font-size: 13px; margin-top: 14px; color: var(--teal); font-weight: 500; }
 .mensaje.error { color: var(--coral); }
 

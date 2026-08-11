@@ -15,6 +15,9 @@ const {
   resumenZonasCarga,
   crearLeadProspecto,
   actualizarLead,
+  leadsDeVendedor,
+  buscarLeadsAdmin,
+  reasignarLeadAdmin,
 } = require("../controllers/leadsController");
 
 const upload = multer({ dest: "uploads/" });
@@ -31,6 +34,13 @@ router.get("/cargas/:id/zonas", requireAuth, requireRole("admin"), zonasConDispo
 router.get("/cargas/:id/zonas/:zonaId/vendedores", requireAuth, requireRole("admin"), vendedoresDeZonaParaAsignar);
 router.post("/asignar-individual", requireAuth, requireRole("admin"), asignarIndividual);
 router.get("/cargas/:id/resumen-zonas", requireAuth, requireRole("admin"), resumenZonasCarga);
+
+// Cartera de un vendedor especifico -- usado para reasignar una visita mal registrada
+router.get("/de-vendedor/:vendedorId", requireAuth, requireRole("admin"), leadsDeVendedor);
+
+// Corrección: reasignación directa de leads (Principal > Reasignar leads)
+router.get("/buscar-admin", requireAuth, requireRole("admin"), buscarLeadsAdmin);
+router.put("/:id/reasignar", requireAuth, requireRole("admin"), reasignarLeadAdmin);
 
 // El vendedor consulta su propia cartera y prospecta nuevos clientes
 router.get("/mis-leads", requireAuth, requireRole("vendedor", "admin"), misLeads);

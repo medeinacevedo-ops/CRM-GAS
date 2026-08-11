@@ -321,6 +321,279 @@ async function reasignarLeadAdmin(req, res) {
   }
 }
 
+/**
+ * Previsualiza si una carga puede deshacerse sin pérdida de datos: solo
+ * es seguro si ninguno de sus leads fue asignado a un vendedor todavía
+ * (nadie trabajó esos clientes). Se usa antes de mostrar el botón
+ * "Deshacer" para no borrar trabajo real por accidente.
+ */
+async function previsualizarDeshacerCarga(req, res) {
+  const { id } = req.params;
+  try {
+    const [[carga]] = await pool.query(`SELECT id, nombre_archivo, total_registros FROM bases_cargadas WHERE id = ?`, [id]);
+    if (!carga) return res.status(404).json({ error: "Carga no encontrada" });
+
+    const [[conteo]] = await pool.query(
+      `SELECT
+         COUNT(*) AS total_leads,
+         SUM(CASE WHEN l.vendedor_id IS NOT NULL THEN 1 ELSE 0 END) AS leads_asignados
+       FROM leads l
+       JOIN leads_base lb ON lb.id = l.lead_base_id
+       WHERE lb.carga_id = ?`,
+      [id]
+    );
+
+    res.json({
+      carga,
+      total_leads_generados: conteo.total_leads,
+      leads_asignados: conteo.leads_asignados || 0,
+      se_puede_deshacer: Number(conteo.leads_asignados) === 0,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al previsualizar la carga" });
+  }
+}
+
+/**
+ * Elimina por completo una carga (bases_cargadas + leads_base + leads
+ * generados) para cuando se subió el CSV equivocado. Solo se permite si
+ * ningún lead de esa carga fue asignado todavía a un vendedor -- una vez
+ * que un vendedor tiene ese cliente en su cartera, ya no es una simple
+ * "carga de prueba" y no se debe borrar silenciosamente (ver la
+ * convención de solo-INSERT documentada en leads_base).
+ */
+async function deshacerCarga(req, res) {
+  const { id } = req.params;
+  const conn = await pool.getConnection();
+  try {
+    const [[carga]] = await conn.query(`SELECT id FROM bases_cargadas WHERE id = ?`, [id]);
+    if (!carga) {
+      conn.release();
+      return res.status(404).json({ error: "Carga no encontrada" });
+    }
+
+    const [[conteo]] = await conn.query(
+      `SELECT COUNT(*) AS asignados
+       FROM leads l JOIN leads_base lb ON lb.id = l.lead_base_id
+       WHERE lb.carga_id = ? AND l.vendedor_id IS NOT NULL`,
+      [id]
+    );
+    if (Number(conteo.asignados) > 0) {
+      conn.release();
+      return res.status(400).json({
+        error: "No se puede deshacer: algunos leads de esta carga ya fueron asignados a un vendedor.",
+      });
+    }
+
+    await conn.beginTransaction();
+    await conn.query(
+      `DELETE l FROM leads l JOIN leads_base lb ON lb.id = l.lead_base_id WHERE lb.carga_id = ?`,
+      [id]
+    );
+    await conn.query(`DELETE FROM leads_base WHERE carga_id = ?`, [id]);
+    await conn.query(`DELETE FROM bases_cargadas WHERE id = ?`, [id]);
+    await conn.commit();
+
+    res.json({ success: true, mensaje: "Carga deshecha correctamente" });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ error: "Error al deshacer la carga" });
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Reasigna TODA la cartera activa de un vendedor a otro de una vez (por
+ * ejemplo, cuando un vendedor deja de operar una zona). Por defecto solo
+ * mueve los leads en los que todavía hay algo por hacer (asignado,
+ * contactado); si se pide incluir_finalizados, también mueve los ya
+ * vendidos/descartados.
+ */
+async function reasignarCarteraCompleta(req, res) {
+  const { vendedor_origen_id, vendedor_destino_id, incluir_finalizados } = req.body;
+  const adminId = req.usuario.id;
+
+  if (!vendedor_origen_id || !vendedor_destino_id) {
+    return res.status(400).json({ error: "vendedor_origen_id y vendedor_destino_id son requeridos" });
+  }
+  if (String(vendedor_origen_id) === String(vendedor_destino_id)) {
+    return res.status(400).json({ error: "El vendedor de origen y destino no pueden ser el mismo" });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    const [[destino]] = await conn.query(
+      `SELECT id FROM usuarios WHERE id = ? AND rol = 'vendedor' AND activo = 1`,
+      [vendedor_destino_id]
+    );
+    if (!destino) {
+      conn.release();
+      return res.status(404).json({ error: "Vendedor destino no encontrado o inactivo" });
+    }
+
+    const estados = incluir_finalizados
+      ? ["asignado", "contactado", "vendido", "descartado"]
+      : ["asignado", "contactado"];
+
+    const [leads] = await conn.query(
+      `SELECT id FROM leads WHERE vendedor_id = ? AND estado IN (?)`,
+      [vendedor_origen_id, estados]
+    );
+    if (leads.length === 0) {
+      conn.release();
+      return res.json({ success: true, mensaje: "Ese vendedor no tiene leads para reasignar con los filtros elegidos", total: 0 });
+    }
+
+    const ids = leads.map((l) => l.id);
+    await conn.beginTransaction();
+
+    await conn.query(
+      `UPDATE leads SET vendedor_id = ?, fecha_asignacion = NOW() WHERE id IN (?)`,
+      [vendedor_destino_id, ids]
+    );
+    await conn.query(
+      `INSERT INTO asignaciones (lead_id, vendedor_id, asignado_por, tipo) VALUES ${ids.map(() => "(?, ?, ?, 'manual')").join(", ")}`,
+      ids.flatMap((leadId) => [leadId, vendedor_destino_id, adminId])
+    );
+
+    await conn.commit();
+    res.json({ success: true, mensaje: `${ids.length} leads reasignados`, total: ids.length });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ error: "Error al reasignar la cartera" });
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Detecta posibles clientes duplicados dentro de la misma zona (mismo
+ * teléfono, o mismo nombre + dirección) -- típico de una base cargada
+ * dos veces por error. Se usa para armar la pantalla "Fusionar leads".
+ */
+async function detectarLeadsDuplicados(req, res) {
+  try {
+    const [porTelefono] = await pool.query(`
+      SELECT lb.telefono AS clave, GROUP_CONCAT(l.id) AS lead_ids, COUNT(*) AS cantidad
+      FROM leads l
+      JOIN leads_base lb ON lb.id = l.lead_base_id
+      WHERE lb.telefono IS NOT NULL AND lb.telefono != ''
+      GROUP BY lb.telefono
+      HAVING COUNT(*) > 1
+    `);
+    const [porNombreDireccion] = await pool.query(`
+      SELECT CONCAT(lb.nombre, ' — ', lb.direccion) AS clave, GROUP_CONCAT(l.id) AS lead_ids, COUNT(*) AS cantidad
+      FROM leads l
+      JOIN leads_base lb ON lb.id = l.lead_base_id
+      WHERE lb.direccion IS NOT NULL AND lb.direccion != ''
+      GROUP BY lb.nombre, lb.direccion
+      HAVING COUNT(*) > 1
+    `);
+
+    const grupos = [...porTelefono, ...porNombreDireccion].map((g) => ({
+      clave: g.clave,
+      lead_ids: g.lead_ids.split(",").map(Number),
+    }));
+
+    if (grupos.length === 0) return res.json([]);
+
+    const todosIds = [...new Set(grupos.flatMap((g) => g.lead_ids))];
+    const [detalles] = await pool.query(
+      `SELECT l.id, l.estado, lb.nombre, lb.telefono, lb.direccion, u.nombre AS vendedor
+       FROM leads l
+       JOIN leads_base lb ON lb.id = l.lead_base_id
+       LEFT JOIN usuarios u ON u.id = l.vendedor_id
+       WHERE l.id IN (?)`,
+      [todosIds]
+    );
+    const porId = Object.fromEntries(detalles.map((d) => [d.id, d]));
+
+    const resultado = grupos.map((g) => ({
+      clave: g.clave,
+      leads: g.lead_ids.map((id) => porId[id]).filter(Boolean),
+    }));
+
+    res.json(resultado);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al buscar duplicados" });
+  }
+}
+
+/**
+ * Fusiona dos o más leads duplicados en uno solo (el "sobreviviente"):
+ * todo el historial (visitas, ventas, checkpoints) de los leads
+ * eliminados se reasigna al sobreviviente antes de borrarlos, para no
+ * perder ninguna venta o visita ya registrada.
+ */
+async function fusionarLeadsDuplicados(req, res) {
+  const { lead_sobreviviente_id, lead_ids_a_eliminar } = req.body;
+
+  if (!lead_sobreviviente_id || !Array.isArray(lead_ids_a_eliminar) || lead_ids_a_eliminar.length === 0) {
+    return res.status(400).json({ error: "lead_sobreviviente_id y lead_ids_a_eliminar son requeridos" });
+  }
+  if (lead_ids_a_eliminar.includes(Number(lead_sobreviviente_id))) {
+    return res.status(400).json({ error: "El lead sobreviviente no puede estar en la lista a eliminar" });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    const [[sobreviviente]] = await conn.query(`SELECT id FROM leads WHERE id = ?`, [lead_sobreviviente_id]);
+    if (!sobreviviente) {
+      conn.release();
+      return res.status(404).json({ error: "Lead sobreviviente no encontrado" });
+    }
+
+    await conn.beginTransaction();
+
+    await conn.query(
+      `UPDATE visitas SET lead_id = ? WHERE lead_id IN (?)`,
+      [lead_sobreviviente_id, lead_ids_a_eliminar]
+    );
+    await conn.query(
+      `UPDATE checkpoints_ubicacion SET referencia_id = ? WHERE tipo_evento = 'visita' AND referencia_id IN (?)`,
+      [lead_sobreviviente_id, lead_ids_a_eliminar]
+    );
+    await conn.query(`DELETE FROM asignaciones WHERE lead_id IN (?)`, [lead_ids_a_eliminar]);
+    await conn.query(`DELETE FROM leads WHERE id IN (?)`, [lead_ids_a_eliminar]);
+
+    await recalcularEstadoLeadTrasFusion(conn, lead_sobreviviente_id);
+
+    await conn.commit();
+    res.json({ success: true, mensaje: `${lead_ids_a_eliminar.length} leads fusionados en el lead #${lead_sobreviviente_id}` });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ error: "Error al fusionar los leads" });
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Misma lógica que recalcularEstadoLead en visitasController.js: el
+ * estado de un lead depende de su visita más reciente. Se duplica aquí
+ * (en vez de importar) porque son módulos independientes y es una
+ * función pequeña; si se edita una, revisar la otra.
+ */
+async function recalcularEstadoLeadTrasFusion(conn, leadId) {
+  const [[ultimaVisita]] = await conn.query(
+    `SELECT resultado FROM visitas WHERE lead_id = ? ORDER BY fecha DESC LIMIT 1`,
+    [leadId]
+  );
+  let nuevoEstado;
+  if (!ultimaVisita) nuevoEstado = "asignado";
+  else if (ultimaVisita.resultado === "venta_cerrada") nuevoEstado = "vendido";
+  else if (ultimaVisita.resultado === "no_interesado") nuevoEstado = "descartado";
+  else nuevoEstado = "contactado";
+
+  await conn.query(`UPDATE leads SET estado = ? WHERE id = ?`, [nuevoEstado, leadId]);
+}
+
 async function resumenCarga(req, res) {
   const { id } = req.params;
   const [rows] = await pool.query("SELECT COUNT(*) as total FROM leads_base WHERE carga_id = ?", [id]);
@@ -503,4 +776,6 @@ module.exports = {
   misLeads, resumenCarga, zonasConDisponiblesDeCarga, vendedoresDeZonaParaAsignar,
   asignarIndividual, resumenZonasCarga, crearLeadProspecto, actualizarLead,
   leadsDeVendedor, buscarLeadsAdmin, reasignarLeadAdmin,
+  previsualizarDeshacerCarga, deshacerCarga, reasignarCarteraCompleta,
+  detectarLeadsDuplicados, fusionarLeadsDuplicados,
 };

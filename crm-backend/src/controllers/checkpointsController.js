@@ -107,4 +107,22 @@ async function listarCheckpoints(req, res) {
   }
 }
 
-module.exports = { listarCheckpoints, resolverVendedoresVisibles };
+/**
+ * Elimina un checkpoint de ubicación puntual (ej. un salto de GPS que
+ * distorsiona el mapa de recorrido del vendedor). Solo admin -- borrar
+ * un checkpoint no afecta visitas ni ventas, es puramente el trazo del
+ * mapa.
+ */
+async function eliminarCheckpointAdmin(req, res) {
+  const { id } = req.params;
+  try {
+    const [result] = await pool.query(`DELETE FROM checkpoints_ubicacion WHERE id = ?`, [id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: "Checkpoint no encontrado" });
+    res.json({ success: true, mensaje: "Checkpoint eliminado" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al eliminar el checkpoint" });
+  }
+}
+
+module.exports = { listarCheckpoints, resolverVendedoresVisibles, eliminarCheckpointAdmin };
