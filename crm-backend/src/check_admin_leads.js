@@ -1,18 +1,14 @@
 require("dotenv").config({ path: require("path").resolve(__dirname, "../.env") });
 const pool = require("./config/db");
 
-async function check() {
+async function update() {
   try {
-    const [rows] = await pool.query(
-      `SELECT id, nombre FROM usuarios WHERE id = 3`
-    );
-    console.log("Usuario ID 3:");
-    rows.forEach(r => console.log(`- ID: ${r.id}, Nombre: ${r.nombre}`));
-
+    await pool.query("UPDATE usuarios SET zona_id = 2 WHERE id = 1");
+    console.log("Admin Principal asignado a la zona de COMAS exitosamente.");
   } catch (err) {
     console.error(err);
   } finally {
     process.exit();
   }
 }
-check();
+update();
