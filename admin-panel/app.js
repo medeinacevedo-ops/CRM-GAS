@@ -168,6 +168,91 @@ document.getElementById("btn-descargar-plantilla").addEventListener("click", () 
   XLSX.writeFile(libro, "plantilla_base_clientes.xlsx");
 });
 
+document.getElementById("archivo-csv").addEventListener("change", () => {
+  // Cualquier cambio de archivo invalida un análisis previo: hay que
+  // analizar el archivo nuevo antes de poder subirlo.
+  document.getElementById("btn-confirmar-carga").disabled = true;
+  document.getElementById("reporte-analisis-base").classList.add("oculto");
+  document.getElementById("cargar-mensaje").textContent = "";
+});
+
+document.getElementById("btn-analizar-base").addEventListener("click", async () => {
+  const input = document.getElementById("archivo-csv");
+  const mensaje = document.getElementById("cargar-mensaje");
+  const btnConfirmar = document.getElementById("btn-confirmar-carga");
+  const btnAnalizar = document.getElementById("btn-analizar-base");
+
+  mensaje.textContent = "";
+  mensaje.classList.remove("error");
+  btnConfirmar.disabled = true;
+
+  if (!input.files[0]) {
+    mensaje.textContent = "Primero selecciona un archivo.";
+    mensaje.classList.add("error");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("archivo", input.files[0]);
+
+  btnAnalizar.disabled = true;
+  btnAnalizar.textContent = "Analizando...";
+  try {
+    const data = await apiFetch("/leads/analizar-base", { method: "POST", body: formData });
+    mostrarReporteAnalisisBase(data);
+    btnConfirmar.disabled = !data.se_puede_cargar;
+    btnConfirmar.title = data.se_puede_cargar ? "" : "Corrige los errores bloqueantes antes de subir";
+  } catch (err) {
+    mensaje.textContent = err.message;
+    mensaje.classList.add("error");
+  } finally {
+    btnAnalizar.disabled = false;
+    btnAnalizar.textContent = "🔍 Analizar antes de subir";
+  }
+});
+
+function mostrarReporteAnalisisBase(data) {
+  const reporte = document.getElementById("reporte-analisis-base");
+  const elResumen = document.getElementById("ra-resumen");
+  const elError = document.getElementById("ra-error-estructura");
+  const elBloqueantes = document.getElementById("ra-filas-bloqueantes");
+  const elAdvertencias = document.getElementById("ra-filas-advertencia");
+
+  reporte.classList.remove("oculto");
+
+  if (data.error_estructura) {
+    elResumen.innerHTML = "";
+    elBloqueantes.innerHTML = "";
+    elAdvertencias.innerHTML = "";
+    elError.innerHTML = `<p class="mensaje error">${data.error_estructura}</p>`;
+    return;
+  }
+  elError.innerHTML = "";
+
+  elResumen.innerHTML = `
+    <p><strong>${data.total_filas}</strong> filas en total —
+      <strong>${data.filas_limpias}</strong> listas para cargar,
+      <strong>${data.filas_bloqueantes.length}</strong> con error bloqueante,
+      <strong>${data.filas_advertencia.length}</strong> con advertencia.</p>
+    ${data.resumen.ya_existentes > 0 ? `<p>⚠ ${data.resumen.ya_existentes} teléfonos ya existen en tu base -- revisa si esta base ya se había cargado antes.</p>` : ""}
+    ${data.resumen.duplicados_internos > 0 ? `<p>⚠ ${data.resumen.duplicados_internos} filas parecen duplicadas dentro del mismo archivo.</p>` : ""}
+    ${data.resumen.distritos_no_reconocidos.length > 0 ? `<p>⚠ Distritos no reconocidos: ${data.resumen.distritos_no_reconocidos.join(", ")}${!data.resumen.ubigeo_disponible ? "" : " (si son de Chile, puedes ignorar esta advertencia)"}</p>` : ""}
+    ${!data.resumen.ubigeo_disponible ? `<p style="color:var(--text-muted);">La validación de distritos está desactivada porque la tabla ubigeo aún no está poblada en el servidor.</p>` : ""}
+  `;
+
+  const filaHtml = (f) => `<li><strong>Fila ${f.fila}</strong> (${f.nombre}): ${f.problemas.join(" · ")}</li>`;
+
+  elBloqueantes.innerHTML =
+    data.filas_bloqueantes.length > 0
+      ? `<p class="mensaje error">Errores bloqueantes -- corrígelos antes de subir:</p><ul>${data.filas_bloqueantes.map(filaHtml).join("")}</ul>`
+      : "";
+
+  elAdvertencias.innerHTML =
+    data.filas_advertencia.length > 0
+      ? `<p class="mensaje">Advertencias -- revisa si son correctas:</p><ul>${data.filas_advertencia.map(filaHtml).join("")}</ul>`
+      : "";
+}
+
 document.getElementById("form-cargar").addEventListener("submit", async (e) => {
   e.preventDefault();
   const input = document.getElementById("archivo-csv");
@@ -184,6 +269,8 @@ document.getElementById("form-cargar").addEventListener("submit", async (e) => {
     const data = await apiFetch("/leads/cargar-base", { method: "POST", body: formData });
     mensaje.textContent = `Carga exitosa — ID ${data.carga_id}, ${data.total_registros} registros.`;
     input.value = "";
+    document.getElementById("btn-confirmar-carga").disabled = true;
+    document.getElementById("reporte-analisis-base").classList.add("oculto");
   } catch (err) {
     mensaje.textContent = err.message;
     mensaje.classList.add("error");

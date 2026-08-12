@@ -60,6 +60,189 @@ async function cargarBase(req, res) {
   }
 }
 
+/**
+ * Analiza un archivo CSV ANTES de cargarlo: no inserta nada en la base ni
+ * crea un registro en bases_cargadas, solo valida fila por fila y
+ * devuelve un reporte. Pantalla "Cargar base > Analizar antes de subir".
+ *
+ * Errores BLOQUEANTES (harían fallar la carga real, porque violan una
+ * restricción de la tabla leads_base):
+ *   - nombre vacío (columna NOT NULL)
+ *   - lat/lng presentes pero no numéricos
+ *   - columnas del archivo que no coinciden con la plantilla (típico si
+ *     Excel exportó con ; en vez de , como separador)
+ *
+ * ADVERTENCIAS (no bloquean, pero conviene revisar antes de confirmar):
+ *   - teléfono con formato dudoso
+ *   - lat/lng en (0,0) o fuera del rango aproximado Perú/Chile
+ *   - distrito que no coincide con ningún distrito conocido en `ubigeo`
+ *     (ese dataset es solo de Perú -- filas de Chile mostrarán esta
+ *     advertencia aunque estén correctas; se omite del todo si la tabla
+ *     no está poblada)
+ *   - duplicado dentro del mismo archivo (mismo teléfono, o mismo
+ *     nombre+dirección repetido)
+ *   - cliente que ya existe en la base (mismo teléfono en leads_base)
+ */
+async function analizarBase(req, res) {
+  if (!req.file) {
+    return res.status(400).json({ error: "Debes adjuntar un archivo CSV" });
+  }
+
+  try {
+    const contenido = fs.readFileSync(req.file.path, "utf8");
+    fs.unlinkSync(req.file.path); // el análisis no conserva el archivo, solo lo lee
+
+    const registros = parse(contenido, { columns: true, skip_empty_lines: true, trim: true });
+
+    if (registros.length === 0) {
+      return res.json({
+        total_filas: 0,
+        error_estructura: "El archivo no contiene registros.",
+        se_puede_cargar: false,
+      });
+    }
+
+    // Si las columnas no coinciden con la plantilla, cualquier análisis
+    // fila por fila sería ruido -- se corta aquí con un mensaje claro.
+    const columnasEsperadas = ["nombre", "telefono", "direccion", "lat", "lng", "distrito"];
+    const columnasEncontradas = Object.keys(registros[0]);
+    const columnasFaltantes = columnasEsperadas.filter((c) => !columnasEncontradas.includes(c));
+    if (columnasFaltantes.length > 0) {
+      return res.json({
+        total_filas: registros.length,
+        error_estructura:
+          `No se reconocen estas columnas: ${columnasFaltantes.join(", ")}. ` +
+          `Columnas encontradas en el archivo: ${columnasEncontradas.join(", ")}. ` +
+          `Si armaste el archivo en Excel, revisa que el separador sea coma (,) y no punto y coma (;), ` +
+          `y que los encabezados coincidan exactamente con la plantilla.`,
+        se_puede_cargar: false,
+      });
+    }
+
+    // Distritos conocidos, solo si la tabla ubigeo ya fue poblada.
+    let distritosConocidos = null;
+    try {
+      const [filasUbigeo] = await pool.query(`SELECT DISTINCT NOMBDIST FROM ubigeo`);
+      if (filasUbigeo.length > 0) {
+        distritosConocidos = new Set(filasUbigeo.map((f) => f.NOMBDIST.trim().toUpperCase()));
+      }
+    } catch (e) {
+      distritosConocidos = null; // la tabla no existe todavía -- se omite esta validación
+    }
+
+    // Teléfonos que ya están en la base, para avisar de clientes repetidos.
+    const telefonosArchivo = [...new Set(registros.map((r) => (r.telefono || "").trim()).filter(Boolean))];
+    let telefonosExistentes = new Set();
+    if (telefonosArchivo.length > 0) {
+      const [filasExistentes] = await pool.query(
+        `SELECT DISTINCT telefono FROM leads_base WHERE telefono IN (?)`,
+        [telefonosArchivo]
+      );
+      telefonosExistentes = new Set(filasExistentes.map((f) => f.telefono));
+    }
+
+    const vistoPorTelefono = new Map();
+    const vistoPorNombreDireccion = new Map();
+    const filasBloqueantes = [];
+    const filasAdvertencia = [];
+    const distritosNoReconocidos = new Set();
+    let yaExistentesCount = 0;
+    let duplicadosInternosCount = 0;
+
+    registros.forEach((r, idx) => {
+      const numeroFila = idx + 2; // +1 por índice base 0, +1 por la fila de encabezado
+      const problemas = [];
+      let esBloqueante = false;
+
+      const nombre = (r.nombre || "").trim();
+      if (!nombre) {
+        problemas.push("Nombre vacío (obligatorio)");
+        esBloqueante = true;
+      }
+
+      const latTexto = (r.lat || "").toString().trim();
+      const lngTexto = (r.lng || "").toString().trim();
+      const latNum = latTexto === "" ? null : Number(latTexto);
+      const lngNum = lngTexto === "" ? null : Number(lngTexto);
+
+      if (latTexto !== "" && Number.isNaN(latNum)) {
+        problemas.push(`Latitud no numérica: "${latTexto}"`);
+        esBloqueante = true;
+      }
+      if (lngTexto !== "" && Number.isNaN(lngNum)) {
+        problemas.push(`Longitud no numérica: "${lngTexto}"`);
+        esBloqueante = true;
+      }
+      if (!esBloqueante && latNum !== null && lngNum !== null) {
+        if (latNum === 0 && lngNum === 0) {
+          problemas.push("Coordenadas en (0,0) — probablemente vacías o mal exportadas");
+        } else if (latNum < -56 || latNum > 0 || lngNum < -82 || lngNum > -66) {
+          problemas.push("Coordenadas fuera del rango esperado para Perú/Chile — revisa si lat/lng están invertidos");
+        }
+      }
+
+      const telefono = (r.telefono || "").trim();
+      if (telefono) {
+        const soloDigitos = telefono.replace(/\D/g, "");
+        if (soloDigitos !== telefono || soloDigitos.length < 7 || soloDigitos.length > 9) {
+          problemas.push(`Teléfono con formato dudoso: "${telefono}"`);
+        }
+        if (telefonosExistentes.has(telefono)) {
+          yaExistentesCount++;
+          problemas.push("Este teléfono ya existe en tu base de clientes");
+        }
+        if (vistoPorTelefono.has(telefono)) {
+          duplicadosInternosCount++;
+          problemas.push(`Teléfono duplicado dentro del archivo (también en la fila ${vistoPorTelefono.get(telefono)})`);
+        } else {
+          vistoPorTelefono.set(telefono, numeroFila);
+        }
+      }
+
+      const direccion = (r.direccion || "").trim();
+      if (nombre && direccion) {
+        const clave = `${nombre.toUpperCase()}|${direccion.toUpperCase()}`;
+        if (vistoPorNombreDireccion.has(clave)) {
+          duplicadosInternosCount++;
+          problemas.push(`Nombre + dirección duplicados dentro del archivo (también en la fila ${vistoPorNombreDireccion.get(clave)})`);
+        } else {
+          vistoPorNombreDireccion.set(clave, numeroFila);
+        }
+      }
+
+      const distrito = (r.distrito || "").trim();
+      if (distrito && distritosConocidos && !distritosConocidos.has(distrito.toUpperCase())) {
+        problemas.push(`Distrito "${distrito}" no coincide con ningún distrito conocido (revisa si tiene un error de tipeo)`);
+        distritosNoReconocidos.add(distrito);
+      }
+
+      if (problemas.length > 0) {
+        const filaReporte = { fila: numeroFila, nombre: nombre || "(vacío)", problemas };
+        if (esBloqueante) filasBloqueantes.push(filaReporte);
+        else filasAdvertencia.push(filaReporte);
+      }
+    });
+
+    res.json({
+      total_filas: registros.length,
+      filas_limpias: registros.length - filasBloqueantes.length - filasAdvertencia.length,
+      filas_bloqueantes: filasBloqueantes,
+      filas_advertencia: filasAdvertencia,
+      resumen: {
+        ya_existentes: yaExistentesCount,
+        duplicados_internos: duplicadosInternosCount,
+        distritos_no_reconocidos: [...distritosNoReconocidos],
+        ubigeo_disponible: distritosConocidos !== null,
+      },
+      se_puede_cargar: filasBloqueantes.length === 0,
+    });
+  } catch (err) {
+    console.error(err);
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    res.status(500).json({ error: "Error al analizar el archivo" });
+  }
+}
+
 async function listarCargas(req, res) {
   const [rows] = await pool.query(
     `SELECT bc.id, bc.nombre_archivo, bc.total_registros, bc.estado, bc.fecha_carga, u.nombre AS cargado_por
@@ -777,5 +960,5 @@ module.exports = {
   asignarIndividual, resumenZonasCarga, crearLeadProspecto, actualizarLead,
   leadsDeVendedor, buscarLeadsAdmin, reasignarLeadAdmin,
   previsualizarDeshacerCarga, deshacerCarga, reasignarCarteraCompleta,
-  detectarLeadsDuplicados, fusionarLeadsDuplicados,
+  detectarLeadsDuplicados, fusionarLeadsDuplicados, analizarBase,
 };

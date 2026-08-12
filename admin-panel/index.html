@@ -266,10 +266,20 @@
         <button type="button" id="btn-descargar-plantilla" class="btn-secundario">⬇ Descargar plantilla Excel</button>
         <form id="form-cargar">
           <input type="file" id="archivo-csv" accept=".csv" required>
-          <button type="submit">Subir archivo</button>
+          <div class="modal-acciones" style="justify-content:flex-start;">
+            <button type="button" id="btn-analizar-base" class="btn-secundario">🔍 Analizar antes de subir</button>
+            <button type="submit" id="btn-confirmar-carga" disabled title="Analiza el archivo primero">Subir archivo</button>
+          </div>
         </form>
         <p class="descripcion" style="margin-top:4px;">La plantilla es en Excel para que sea fácil de llenar; antes de subirla, guárdala como <code>.csv</code> (Archivo → Guardar como → CSV).</p>
         <p id="cargar-mensaje" class="mensaje"></p>
+
+        <div id="reporte-analisis-base" class="oculto">
+          <div id="ra-resumen" class="tarjeta-duplicado"></div>
+          <div id="ra-error-estructura"></div>
+          <div id="ra-filas-bloqueantes"></div>
+          <div id="ra-filas-advertencia"></div>
+        </div>
       </section>
 
       <!-- Historial -->
