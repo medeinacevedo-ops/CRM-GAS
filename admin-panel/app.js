@@ -747,6 +747,7 @@ async function cargarDashboard() {
     document.getElementById("kpi-convertidos").textContent = data.leads_convertidos_mes;
     document.getElementById("kpi-activos").textContent = `${data.vendedores_activos_hoy} / ${data.total_vendedores}`;
     document.getElementById("kpi-conversion").textContent = `${data.conversion_promedio_pct}%`;
+    document.getElementById("kpi-sph-equipo").textContent = data.sph_equipo.toFixed(2);
 
     // Cobertura por zona
     const coberturaDiv = document.getElementById("cobertura-lista");
@@ -785,9 +786,10 @@ async function cargarDashboard() {
           <td>${r.zona || "—"}</td>
           <td>${formatoMoneda(r.ventas_monto)}</td>
           <td>${r.conversion_pct}%</td>
+          <td>${r.sph.toFixed(2)}</td>
         </tr>`
         )
-        .join("") || `<tr><td colspan="5">Sin datos de ventas todavía</td></tr>`;
+        .join("") || `<tr><td colspan="6">Sin datos de ventas todavía</td></tr>`;
   } catch (err) {
     console.error("Error al cargar el dashboard:", err.message);
   }
@@ -815,6 +817,7 @@ async function cargarResumenIndicadores(params) {
       { icono: "🧾", etiqueta: "Pedidos", valor: actual.pedidos_total, cambio: cambios.pedidos_total },
       { icono: "💰", etiqueta: "Ventas", valor: formatoMoneda(actual.ventas_monto), cambio: cambios.ventas_monto },
       { icono: "📈", etiqueta: "Conversión", valor: `${actual.conversion_pct}%`, cambio: cambios.conversion_pct },
+      { icono: "⚡", etiqueta: "SPH", valor: actual.sph.toFixed(2), cambio: cambios.sph },
     ];
 
     cont.innerHTML = items.map((it) => `

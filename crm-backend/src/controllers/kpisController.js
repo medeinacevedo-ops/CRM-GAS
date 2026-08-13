@@ -139,6 +139,19 @@ async function dashboardAdmin(req, res) {
       `SELECT COUNT(*) AS total FROM usuarios WHERE rol = 'vendedor' AND activo = 1`
     );
 
+    // SPH del equipo (ventas cerradas / hora trabajada). A propósito NO
+    // se filtra por baseIds -- ver comentario en calcularIndicadoresPeriodo.
+    const [[horasEquipo]] = await pool.query(
+      `SELECT COALESCE(SUM(tiempo_activo_total), 0) AS minutos_totales
+       FROM jornadas
+       WHERE YEAR(fecha) = ? AND MONTH(fecha) = ? AND tiempo_activo_total IS NOT NULL`,
+      [anio, mes]
+    );
+    const horasTrabajadasEquipo = horasEquipo.minutos_totales / 60;
+    const sphEquipo = horasTrabajadasEquipo > 0
+      ? Math.round((resumen.leads_convertidos_mes / horasTrabajadasEquipo) * 100) / 100
+      : 0;
+
     const [[conversion]] = await pool.query(
       `SELECT
          COUNT(*) AS total_visitas,
@@ -189,7 +202,12 @@ async function dashboardAdmin(req, res) {
       `SELECT u.nombre AS vendedor, z.nombre AS zona,
               COALESCE(SUM(ve.monto), 0) AS ventas_monto,
               COUNT(DISTINCT v.id) AS total_visitas,
-              SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS total_ventas
+              SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS total_ventas,
+              COALESCE((
+                SELECT SUM(j.tiempo_activo_total) FROM jornadas j
+                WHERE j.vendedor_id = u.id AND YEAR(j.fecha) = ? AND MONTH(j.fecha) = ?
+                  AND j.tiempo_activo_total IS NOT NULL
+              ), 0) AS minutos_trabajados
        FROM usuarios u
        LEFT JOIN zonas z ON z.id = u.zona_id
        LEFT JOIN visitas v ON v.vendedor_id = u.id
@@ -202,14 +220,21 @@ async function dashboardAdmin(req, res) {
        GROUP BY u.id
        ORDER BY ventas_monto DESC
        LIMIT 10`,
-      [anio, mes, ...valoresBase]
+      [anio, mes, anio, mes, ...valoresBase]
     );
-    const rankingConConversion = ranking.map((r) => ({
-      vendedor: r.vendedor,
-      zona: r.zona,
-      ventas_monto: r.ventas_monto,
-      conversion_pct: r.total_visitas > 0 ? Math.round((r.total_ventas / r.total_visitas) * 100) : 0,
-    }));
+    // SPH por vendedor: sus horas trabajadas NO se filtran por base (mismo
+    // motivo que el SPH del equipo), aunque ventas_monto sí respeta el
+    // filtro de base si el admin eligió una.
+    const rankingConConversion = ranking.map((r) => {
+      const horas = (r.minutos_trabajados || 0) / 60;
+      return {
+        vendedor: r.vendedor,
+        zona: r.zona,
+        ventas_monto: r.ventas_monto,
+        conversion_pct: r.total_visitas > 0 ? Math.round((r.total_ventas / r.total_visitas) * 100) : 0,
+        sph: horas > 0 ? Math.round((r.total_ventas / horas) * 100) / 100 : 0,
+      };
+    });
 
     res.json({
       ventas_mes: resumen.ventas_mes,
@@ -217,6 +242,7 @@ async function dashboardAdmin(req, res) {
       vendedores_activos_hoy: activosHoy.total,
       total_vendedores: totalVendedores.total,
       conversion_promedio_pct: conversionPromedio,
+      sph_equipo: sphEquipo,
       ventas_por_semana: ventasPorSemana,
       cobertura_por_zona: cobertura,
       ranking_vendedores: rankingConConversion,
@@ -434,6 +460,21 @@ async function calcularIndicadoresPeriodo({ anio, mes }, baseIds) {
   const cobertura_pct = fila.leads_total > 0 ? Math.round((fila.cobertura_total / fila.leads_total) * 100) : 0;
   const conversion_pct = fila.contactos_total > 0 ? Math.round((fila.pedidos_total / fila.contactos_total) * 100) : 0;
 
+  // SPH (ventas cerradas por hora trabajada) es del EQUIPO completo, no
+  // de una base en particular: las horas de jornada no son atribuibles a
+  // una base de leads (un vendedor puede trabajar leads de varias bases
+  // en la misma jornada), así que a propósito NO se filtra por baseIds
+  // -- solo se filtra por el mes. Solo cuentan jornadas ya cerradas
+  // (tiempo_activo_total se calcula al marcar salida).
+  const [[horasFila]] = await pool.query(
+    `SELECT COALESCE(SUM(tiempo_activo_total), 0) AS minutos_totales
+     FROM jornadas
+     WHERE YEAR(fecha) = ? AND MONTH(fecha) = ? AND tiempo_activo_total IS NOT NULL`,
+    [anio, mes]
+  );
+  const horasTrabajadas = horasFila.minutos_totales / 60;
+  const sph = horasTrabajadas > 0 ? Math.round((fila.pedidos_total / horasTrabajadas) * 100) / 100 : 0;
+
   return {
     leads_total: fila.leads_total,
     cobertura_total: fila.cobertura_total,
@@ -442,6 +483,7 @@ async function calcularIndicadoresPeriodo({ anio, mes }, baseIds) {
     pedidos_total: fila.pedidos_total,
     ventas_monto: fila.ventas_monto,
     conversion_pct,
+    sph,
   };
 }
 
@@ -470,6 +512,7 @@ async function resumenIndicadores(req, res) {
         pedidos_total: calcularCambioPct(actual.pedidos_total, anterior.pedidos_total),
         ventas_monto: calcularCambioPct(actual.ventas_monto, anterior.ventas_monto),
         conversion_pct: calcularCambioPct(actual.conversion_pct, anterior.conversion_pct),
+        sph: calcularCambioPct(actual.sph, anterior.sph),
       },
     });
   } catch (err) {
