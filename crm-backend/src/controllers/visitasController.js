@@ -23,7 +23,7 @@ function normalizarResultado(resultado) {
  * Si el resultado es 'venta_cerrada', tambien crea el registro en `ventas`.
  */
 async function registrarVisita(req, res) {
-  const { lead_id, lat, lng, resultado, notas, producto, monto } = req.body;
+  const { lead_id, lat, lng, resultado, notas, producto, monto, proxima_cita } = req.body;
   const vendedorId = req.usuario.id;
 
   if (!lead_id || !lat || !lng || !resultado) {
@@ -71,6 +71,11 @@ async function registrarVisita(req, res) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [lead_id, vendedorId, resultadoDB, lat, lng, Math.round(distancia), notas || null, fotoUrl, firmaUrl]
     );
+
+    // Si hay proxima_cita, actualizarla en el lead
+    if (proxima_cita) {
+      await conn.query(`UPDATE leads SET proxima_cita = ? WHERE id = ?`, [proxima_cita, lead_id]);
+    }
 
     if (resultadoDB === "venta_cerrada") {
       if (!producto || !monto) {
