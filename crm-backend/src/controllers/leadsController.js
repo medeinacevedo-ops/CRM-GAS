@@ -922,16 +922,25 @@ async function distritosDeCarga(req, res) {
  * directamente (igual criterio que generarLeadsOperativos), filtrando
  * los leads_base que aún no se generaron como lead operativo.
  */
+/**
+ * Zonas disponibles para el paso 2. "Disponibles" acá tiene el mismo
+ * criterio que resumenCarga: leads_base de esa zona/carga que TODAVÍA no
+ * tienen vendedor -- ya sea porque no se generaron aún (no hay fila en
+ * `leads`) o porque se generaron pero nadie los tomó. Antes solo contaba
+ * los "pendientes de generar", así que una zona ya generada por completo
+ * (aunque le quedaran leads sin asignar) desaparecía del selector.
+ */
 async function zonasConDisponiblesDeCarga(req, res) {
   const { id } = req.params;
   try {
     const [rows] = await pool.query(
-      `SELECT z.id, z.nombre, z.distrito, COUNT(lb.id) AS disponibles
+      `SELECT z.id, z.nombre, z.distrito,
+              SUM(CASE WHEN l.vendedor_id IS NULL THEN 1 ELSE 0 END) AS disponibles
        FROM zonas z
        JOIN leads_base lb
          ON lb.distrito COLLATE utf8mb4_unicode_ci = z.distrito COLLATE utf8mb4_unicode_ci
         AND lb.carga_id = ?
-       WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.lead_base_id = lb.id)
+       LEFT JOIN leads l ON l.lead_base_id = lb.id
        GROUP BY z.id
        HAVING disponibles > 0`, [id]
     );
