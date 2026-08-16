@@ -778,23 +778,46 @@ async function recalcularEstadoLeadTrasFusion(conn, leadId) {
   await conn.query(`UPDATE leads SET estado = ? WHERE id = ?`, [nuevoEstado, leadId]);
 }
 
+/**
+ * Resumen para la pantalla de "Generar operativos". Importante: para una
+ * base recién cargada la tabla `leads` (operativa) todavía está vacía —
+ * recién se llena cuando se ejecuta generarLeadsOperativos por zona. Por
+ * eso "leads_disponibles" aquí NO cuenta sobre `leads`, sino sobre los
+ * leads_base de la carga que todavía NO se convirtieron en un lead
+ * operativo (o sea, los que están listos/pendientes para generar).
+ */
 async function resumenCarga(req, res) {
   const { id } = req.params;
   const [rows] = await pool.query("SELECT COUNT(*) as total FROM leads_base WHERE carga_id = ?", [id]);
-  const [libres] = await pool.query("SELECT COUNT(*) as total FROM leads l JOIN leads_base lb ON lb.id = l.lead_base_id WHERE lb.carga_id = ? AND l.vendedor_id IS NULL", [id]);
-  res.json({ total_leads: rows[0].total, leads_disponibles: libres[0].total });
+  const [pendientes] = await pool.query(
+    `SELECT COUNT(*) as total
+     FROM leads_base lb
+     WHERE lb.carga_id = ?
+       AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.lead_base_id = lb.id)`,
+    [id]
+  );
+  res.json({ total_leads: rows[0].total, leads_disponibles: pendientes[0].total });
 }
 
+/**
+ * Zonas disponibles para GENERAR (no para repartir). Debe poder listar
+ * zonas incluso cuando `leads` todavía no tiene ninguna fila para esta
+ * carga — por eso el match es leads_base.distrito contra zonas.distrito
+ * directamente (igual criterio que generarLeadsOperativos), filtrando
+ * los leads_base que aún no se generaron como lead operativo.
+ */
 async function zonasConDisponiblesDeCarga(req, res) {
   const { id } = req.params;
   try {
     const [rows] = await pool.query(
-      `SELECT z.id, z.nombre, z.distrito, COUNT(*) AS disponibles
-       FROM leads l
-       JOIN leads_base lb ON lb.id = l.lead_base_id
-       JOIN zonas z ON z.id = l.zona_id
-       WHERE lb.carga_id = ? AND l.estado = 'nuevo'
-       GROUP BY z.id`, [id]
+      `SELECT z.id, z.nombre, z.distrito, COUNT(lb.id) AS disponibles
+       FROM zonas z
+       JOIN leads_base lb
+         ON lb.distrito COLLATE utf8mb4_unicode_ci = z.distrito COLLATE utf8mb4_unicode_ci
+        AND lb.carga_id = ?
+       WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.lead_base_id = lb.id)
+       GROUP BY z.id
+       HAVING disponibles > 0`, [id]
     );
     res.json(rows);
   } catch (err) { console.error(err); res.status(500).json({ error: "Error" }); }
