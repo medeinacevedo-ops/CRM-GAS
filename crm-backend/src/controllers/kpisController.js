@@ -52,6 +52,13 @@ async function kpisVendedor(req, res) {
   const vendedorId = req.usuario.id;
 
   try {
+    // Obtener configuraciones de la base de datos
+    const [configs] = await pool.query("SELECT clave, valor FROM configuraciones");
+    const configMap = Object.fromEntries(configs.map(c => [c.clave, c.valor]));
+
+    const COMISION_FIJA = Number(configMap['comision_por_venta'] || 50);
+    const META_VENTAS_MES = Number(configMap['meta_ventas_mes'] || 20);
+
     const [[hoy]] = await pool.query(
       `SELECT
          COUNT(*) AS visitados,
@@ -90,12 +97,15 @@ async function kpisVendedor(req, res) {
         pendientes: asignadosHoy.total,
         ventas: hoy.ventas || 0,
         monto: hoy.monto,
+        comisiones: (hoy.ventas || 0) * COMISION_FIJA,
         conversion_pct: conversionHoy,
       },
       mes: {
         visitados: mes.visitados,
         ventas: mes.ventas || 0,
         monto: mes.monto,
+        comisiones: (mes.ventas || 0) * COMISION_FIJA,
+        meta_ventas: META_VENTAS_MES,
         conversion_pct: conversionMes,
       },
     });
