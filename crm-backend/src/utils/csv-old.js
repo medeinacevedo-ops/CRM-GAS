@@ -1,35 +1,3 @@
-const fs = require("fs");
-
-/**
- * Lee un archivo CSV detectando automáticamente su codificación real.
- *
- * Excel en Windows con configuración regional en español suele exportar
- * CSV en Windows-1252/Latin-1, no en UTF-8. Si ese archivo se lee forzando
- * UTF-8, cada tilde/ñ (bytes fuera del rango ASCII) se decodifica como el
- * carácter de reemplazo "�" (U+FFFD) -- eso es lo que produce nombres
- * como "Ch�vez" en vez de "Chávez".
- *
- * Estrategia: si el archivo trae BOM UTF-8, es UTF-8 seguro. Si no, se
- * intenta decodificar como UTF-8 y se revisa si aparece el carácter de
- * reemplazo; de ser así, se vuelve a decodificar como "latin1" (que en el
- * rango de tildes/ñ coincide con Windows-1252, cubriendo el caso real sin
- * depender de una librería externa).
- */
-function leerContenidoCsv(rutaArchivo) {
-  const buffer = fs.readFileSync(rutaArchivo);
-
-  const tieneBomUtf8 = buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf;
-  if (tieneBomUtf8) {
-    return buffer.slice(3).toString("utf8");
-  }
-
-  const comoUtf8 = buffer.toString("utf8");
-  if (comoUtf8.includes("\uFFFD")) {
-    return buffer.toString("latin1");
-  }
-  return comoUtf8;
-}
-
 /**
  * Genera un CSV a partir de columnas definidas y filas de datos (arrays de
  * objetos planos). Sin dependencias externas -- csv-parse ya está en el
@@ -79,4 +47,4 @@ function enviarCsv(res, nombreArchivo, columnas, filas) {
   res.send(csv);
 }
 
-module.exports = { generarCsv, enviarCsv, leerContenidoCsv };
+module.exports = { generarCsv, enviarCsv };
