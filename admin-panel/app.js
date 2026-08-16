@@ -3357,7 +3357,7 @@ async function cargarTablaCatalogoProductos() {
     const productos = await apiFetch(`/catalogo/productos?${params.toString()}`);
     renderTablaCatalogoProductos(productos);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8">Error al cargar productos: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10">Error al cargar productos: ${err.message}</td></tr>`;
   }
 }
 
@@ -3365,7 +3365,7 @@ function renderTablaCatalogoProductos(productos) {
   const tbody = document.getElementById("tabla-catalogo-productos");
 
   if (productos.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--text-muted);">No hay productos que coincidan.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="color:var(--text-muted);">No hay productos que coincidan.</td></tr>`;
     return;
   }
 
@@ -3377,6 +3377,8 @@ function renderTablaCatalogoProductos(productos) {
         <td>${p.codigo || "—"}</td>
         <td>${p.nombre}</td>
         <td>${p.categoria || "—"}</td>
+        <td>${p.tipo || "—"}</td>
+        <td>${p.marca || "—"}</td>
         <td>S/ ${Number(p.precio_lista).toFixed(2)}</td>
         <td>S/ ${Number(p.comision).toFixed(2)}</td>
         <td>
@@ -3419,6 +3421,7 @@ function abrirModalNuevoProducto() {
   formProducto.reset();
   catalogoProductoActualId = null;
   document.getElementById("producto-id").value = "";
+  document.getElementById("producto-tipo-input").value = "Producto";
   document.getElementById("modal-producto-titulo").textContent = "Nuevo producto";
   document.getElementById("producto-mensaje").textContent = "";
   document.getElementById("producto-seccion-imagenes").classList.add("oculto");
@@ -3436,6 +3439,9 @@ async function abrirModalEditarProducto(id) {
     document.getElementById("producto-codigo-input").value = producto.codigo || "";
     document.getElementById("producto-nombre-input").value = producto.nombre;
     document.getElementById("producto-categoria-input").value = producto.categoria || "";
+    document.getElementById("producto-tipo-input").value = producto.tipo || "Producto";
+    document.getElementById("producto-marca-input").value = producto.marca || "";
+    document.getElementById("producto-unidad-input").value = producto.unidad || "";
     document.getElementById("producto-precio-input").value = producto.precio_lista;
     document.getElementById("producto-comision-input").value = producto.comision;
     document.getElementById("producto-descripcion-input").value = producto.descripcion || "";
@@ -3469,6 +3475,9 @@ formProducto.addEventListener("submit", async (e) => {
     codigo: document.getElementById("producto-codigo-input").value.trim() || null,
     nombre: document.getElementById("producto-nombre-input").value.trim(),
     categoria: document.getElementById("producto-categoria-input").value.trim() || null,
+    tipo: document.getElementById("producto-tipo-input").value,
+    marca: document.getElementById("producto-marca-input").value.trim() || null,
+    unidad: document.getElementById("producto-unidad-input").value.trim() || null,
     precio_lista: document.getElementById("producto-precio-input").value || 0,
     comision: document.getElementById("producto-comision-input").value || 0,
     descripcion: document.getElementById("producto-descripcion-input").value.trim() || null,
@@ -3593,11 +3602,14 @@ async function eliminarImagenProducto(imagenId) {
 // CATALOGO: CARGAR (CSV masivo)
 // ---------------------------------------------------------------------
 document.getElementById("btn-descargar-plantilla-catalogo").addEventListener("click", () => {
-  const encabezados = ["codigo", "nombre", "categoria", "precio", "comision", "descripcion"];
-  const filaEjemplo = ["TERMA-12L", "Terma a gas 12 litros", "Termas", "450.00", "45.00", "Terma instantánea a gas, 12 litros por minuto"];
+  const encabezados = ["codigo", "nombre", "categoria", "tipo", "marca", "unidad", "precio", "comision", "descripcion"];
+  const filaEjemplo = [
+    "TERMA-12L", "Terma a gas 12 litros", "Termas", "Producto", "Fagor", "unidad",
+    "450.00", "45.00", "Terma instantánea a gas, 12 litros por minuto",
+  ];
 
   const hoja = XLSX.utils.aoa_to_sheet([encabezados, filaEjemplo]);
-  hoja["!cols"] = [{ wch: 16 }, { wch: 30 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 40 }];
+  hoja["!cols"] = [{ wch: 16 }, { wch: 30 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 40 }];
 
   const libro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro, hoja, "Catálogo");

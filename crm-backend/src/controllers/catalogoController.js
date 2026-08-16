@@ -84,16 +84,20 @@ async function importarProductos(req, res) {
 
     for (const r of registros) {
       // Usar INSERT ... ON DUPLICATE KEY UPDATE para el código de producto
+      const tipoValido = ["Producto", "Tarifa", "Servicio"].includes(r.tipo) ? r.tipo : "Producto";
       await conn.query(`
-        INSERT INTO productos (codigo, nombre, categoria, precio_lista, comision, descripcion, especificaciones)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO productos (codigo, nombre, categoria, precio_lista, comision, descripcion, especificaciones, marca, unidad, tipo)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           nombre = VALUES(nombre),
           categoria = VALUES(categoria),
           precio_lista = VALUES(precio_lista),
           comision = VALUES(comision),
           descripcion = VALUES(descripcion),
-          especificaciones = VALUES(especificaciones)
+          especificaciones = VALUES(especificaciones),
+          marca = VALUES(marca),
+          unidad = VALUES(unidad),
+          tipo = VALUES(tipo)
       `, [
         r.codigo || null,
         r.nombre,
@@ -101,7 +105,10 @@ async function importarProductos(req, res) {
         parseFloat(r.precio || 0),
         parseFloat(r.comision || 0),
         r.descripcion || null,
-        JSON.stringify(r)
+        JSON.stringify(r),
+        r.marca || null,
+        r.unidad || null,
+        tipoValido
       ]);
     }
 
@@ -133,13 +140,13 @@ async function listarCategorias(req, res) {
  * Crea un producto manualmente (sin pasar por CSV).
  */
 async function crearProducto(req, res) {
-  const { codigo, nombre, categoria, precio_lista, comision, descripcion } = req.body;
+  const { codigo, nombre, categoria, precio_lista, comision, descripcion, marca, unidad, tipo } = req.body;
   if (!nombre) return res.status(400).json({ error: "El nombre es obligatorio" });
 
   try {
     const [result] = await pool.query(
-      `INSERT INTO productos (codigo, nombre, categoria, precio_lista, comision, descripcion)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO productos (codigo, nombre, categoria, precio_lista, comision, descripcion, marca, unidad, tipo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         codigo || null,
         nombre,
@@ -147,6 +154,9 @@ async function crearProducto(req, res) {
         parseFloat(precio_lista) || 0,
         parseFloat(comision) || 0,
         descripcion || null,
+        marca || null,
+        unidad || null,
+        tipo || "Producto",
       ]
     );
     res.status(201).json({ success: true, id: result.insertId });
@@ -164,12 +174,13 @@ async function crearProducto(req, res) {
  */
 async function actualizarProducto(req, res) {
   const { id } = req.params;
-  const { codigo, nombre, categoria, precio_lista, comision, descripcion } = req.body;
+  const { codigo, nombre, categoria, precio_lista, comision, descripcion, marca, unidad, tipo } = req.body;
   if (!nombre) return res.status(400).json({ error: "El nombre es obligatorio" });
 
   try {
     const [result] = await pool.query(
-      `UPDATE productos SET codigo = ?, nombre = ?, categoria = ?, precio_lista = ?, comision = ?, descripcion = ?
+      `UPDATE productos SET codigo = ?, nombre = ?, categoria = ?, precio_lista = ?, comision = ?, descripcion = ?,
+         marca = ?, unidad = ?, tipo = ?
        WHERE id = ?`,
       [
         codigo || null,
@@ -178,6 +189,9 @@ async function actualizarProducto(req, res) {
         parseFloat(precio_lista) || 0,
         parseFloat(comision) || 0,
         descripcion || null,
+        marca || null,
+        unidad || null,
+        tipo || "Producto",
         id,
       ]
     );

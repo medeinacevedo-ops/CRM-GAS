@@ -592,7 +592,7 @@
 
         <table class="tabla">
           <thead>
-            <tr><th>Foto</th><th>Código</th><th>Nombre</th><th>Categoría</th><th>Precio</th><th>Comisión</th><th>Activo</th><th>Acciones</th></tr>
+            <tr><th>Foto</th><th>Código</th><th>Nombre</th><th>Categoría</th><th>Tipo</th><th>Marca</th><th>Precio</th><th>Comisión</th><th>Activo</th><th>Acciones</th></tr>
           </thead>
           <tbody id="tabla-catalogo-productos"></tbody>
         </table>
@@ -613,6 +613,19 @@
               <label for="producto-categoria-input">Categoría</label>
               <input type="text" id="producto-categoria-input" list="lista-categorias-datalist" placeholder="Ej. Termas">
               <datalist id="lista-categorias-datalist"></datalist>
+
+              <label for="producto-tipo-input">Tipo</label>
+              <select id="producto-tipo-input">
+                <option value="Producto">Producto</option>
+                <option value="Tarifa">Tarifa</option>
+                <option value="Servicio">Servicio</option>
+              </select>
+
+              <label for="producto-marca-input">Marca</label>
+              <input type="text" id="producto-marca-input" placeholder="Ej. Fagor">
+
+              <label for="producto-unidad-input">Unidad</label>
+              <input type="text" id="producto-unidad-input" placeholder="Ej. unidad, litros, juego">
 
               <label for="producto-precio-input">Precio de lista (S/)</label>
               <input type="number" id="producto-precio-input" step="0.01" min="0" placeholder="0.00">
