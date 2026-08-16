@@ -39,6 +39,8 @@ app.use(express.static(path.join(__dirname, "..")));
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
+app.get("/api/ping-catalogo", (req, res) => res.json({ message: "Catalogo reachable", time: new Date() }));
+
 // RUTA DE CATÁLOGO (Prioridad Alta para Debug)
 app.use("/api/catalogo", catalogoRoutes);
 
