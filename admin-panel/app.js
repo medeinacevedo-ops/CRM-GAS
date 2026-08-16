@@ -2271,12 +2271,18 @@ async function confirmarDeshacerCarga(cargaId) {
     const preview = await apiFetch(`/leads/cargas/${cargaId}/deshacer-preview`);
     if (!preview.se_puede_deshacer) {
       alert(
-        `No se puede deshacer esta carga: ${preview.leads_asignados} de sus ${preview.total_leads_generados} leads ya fueron asignados a un vendedor.`
+        `No se puede deshacer esta carga: ${preview.leads_con_visitas} de sus ${preview.total_leads_generados} leads ya tienen visitas registradas (posible venta en curso).`
       );
       return;
     }
+
+    const avisoAsignados =
+      preview.leads_asignados > 0
+        ? ` ${preview.leads_asignados} de ellos ya están asignados a un vendedor, pero sin visitas aún, así que se pueden borrar junto con su asignación.`
+        : " Ninguno fue asignado todavía.";
+
     const ok = confirm(
-      `Esta carga generó ${preview.total_leads_generados} leads y ninguno fue asignado todavía. ¿Eliminarla por completo? Esta acción no se puede deshacer.`
+      `Esta carga generó ${preview.total_leads_generados} leads.${avisoAsignados} ¿Eliminarla por completo? Esta acción no se puede deshacer.`
     );
     if (!ok) return;
 

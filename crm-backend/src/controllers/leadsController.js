@@ -520,6 +520,12 @@ async function reasignarLeadAdmin(req, res) {
  * (nadie trabajó esos clientes). Se usa antes de mostrar el botón
  * "Deshacer" para no borrar trabajo real por accidente.
  */
+/**
+ * Lo que de verdad hay que proteger al deshacer una carga no es que el
+ * lead tenga vendedor asignado, sino que el vendedor ya haya trabajado
+ * ese lead (visita registrada, y por lo tanto posible venta). Una
+ * asignación sin actividad todavía es reversible sin pérdida real.
+ */
 async function previsualizarDeshacerCarga(req, res) {
   const { id } = req.params;
   try {
@@ -529,7 +535,8 @@ async function previsualizarDeshacerCarga(req, res) {
     const [[conteo]] = await pool.query(
       `SELECT
          COUNT(*) AS total_leads,
-         SUM(CASE WHEN l.vendedor_id IS NOT NULL THEN 1 ELSE 0 END) AS leads_asignados
+         SUM(CASE WHEN l.vendedor_id IS NOT NULL THEN 1 ELSE 0 END) AS leads_asignados,
+         SUM(CASE WHEN EXISTS (SELECT 1 FROM visitas v WHERE v.lead_id = l.id) THEN 1 ELSE 0 END) AS leads_con_visitas
        FROM leads l
        JOIN leads_base lb ON lb.id = l.lead_base_id
        WHERE lb.carga_id = ?`,
@@ -540,7 +547,8 @@ async function previsualizarDeshacerCarga(req, res) {
       carga,
       total_leads_generados: conteo.total_leads,
       leads_asignados: conteo.leads_asignados || 0,
-      se_puede_deshacer: Number(conteo.leads_asignados) === 0,
+      leads_con_visitas: conteo.leads_con_visitas || 0,
+      se_puede_deshacer: Number(conteo.leads_con_visitas) === 0,
     });
   } catch (err) {
     console.error(err);
@@ -550,11 +558,12 @@ async function previsualizarDeshacerCarga(req, res) {
 
 /**
  * Elimina por completo una carga (bases_cargadas + leads_base + leads
- * generados) para cuando se subió el CSV equivocado. Solo se permite si
- * ningún lead de esa carga fue asignado todavía a un vendedor -- una vez
- * que un vendedor tiene ese cliente en su cartera, ya no es una simple
- * "carga de prueba" y no se debe borrar silenciosamente (ver la
- * convención de solo-INSERT documentada en leads_base).
+ * generados) para cuando se subió el CSV equivocado. Se permite aunque
+ * algunos leads ya estén asignados a un vendedor -- una asignación sin
+ * actividad real es reversible. Lo que SÍ bloquea el borrado es que
+ * exista al menos una visita registrada sobre algún lead de la carga,
+ * porque ahí ya hay trabajo de campo real (y posible venta) que no se
+ * debe borrar en silencio.
  */
 async function deshacerCarga(req, res) {
   const { id } = req.params;
@@ -567,19 +576,25 @@ async function deshacerCarga(req, res) {
     }
 
     const [[conteo]] = await conn.query(
-      `SELECT COUNT(*) AS asignados
+      `SELECT COUNT(*) AS con_visitas
        FROM leads l JOIN leads_base lb ON lb.id = l.lead_base_id
-       WHERE lb.carga_id = ? AND l.vendedor_id IS NOT NULL`,
+       WHERE lb.carga_id = ? AND EXISTS (SELECT 1 FROM visitas v WHERE v.lead_id = l.id)`,
       [id]
     );
-    if (Number(conteo.asignados) > 0) {
+    if (Number(conteo.con_visitas) > 0) {
       conn.release();
       return res.status(400).json({
-        error: "No se puede deshacer: algunos leads de esta carga ya fueron asignados a un vendedor.",
+        error: "No se puede deshacer: algunos leads de esta carga ya tienen visitas registradas.",
       });
     }
 
     await conn.beginTransaction();
+    // Los leads pueden tener asignaciones (sin actividad) -- hay que
+    // limpiarlas primero por la FK antes de borrar los leads.
+    await conn.query(
+      `DELETE a FROM asignaciones a JOIN leads l ON l.id = a.lead_id JOIN leads_base lb ON lb.id = l.lead_base_id WHERE lb.carga_id = ?`,
+      [id]
+    );
     await conn.query(
       `DELETE l FROM leads l JOIN leads_base lb ON lb.id = l.lead_base_id WHERE lb.carga_id = ?`,
       [id]
