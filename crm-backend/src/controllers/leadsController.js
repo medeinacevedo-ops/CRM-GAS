@@ -254,9 +254,14 @@ async function listarCargas(req, res) {
 
 /**
  * Genera la copia operativa. Mejora: Búsqueda insensible a acentos y espacios.
+ * `auto_repartir` (default true) controla si, además de crear los leads,
+ * se reparten automáticamente por round-robin entre vendedores activos.
+ * La pantalla de "Generar operativos" (asignación manual paso a paso)
+ * llama esto con auto_repartir=false para solo crear los leads y dejar
+ * que el admin elija las cantidades por vendedor en el paso 3.
  */
 async function generarLeadsOperativos(req, res) {
-  const { carga_id, zona_id } = req.body;
+  const { carga_id, zona_id, auto_repartir = true } = req.body;
   const adminId = req.usuario.id;
 
   if (!carga_id || !zona_id) return res.status(400).json({ error: "Carga y Zona son requeridas" });
@@ -281,8 +286,8 @@ async function generarLeadsOperativos(req, res) {
 
     const leadsCreados = insResult.affectedRows;
 
-    // Reparto automático inmediato si hay vendedores activos
-    if (leadsCreados > 0) {
+    // Reparto automático inmediato si hay vendedores activos (solo si se pidió)
+    if (leadsCreados > 0 && auto_repartir) {
       const [vendedores] = await conn.query(
         `SELECT id FROM usuarios WHERE zona_id = ? AND rol = 'vendedor' AND activo = 1`, [zona_id]
       );
@@ -306,7 +311,10 @@ async function generarLeadsOperativos(req, res) {
     }
 
     await conn.commit();
-    res.status(201).json({ success: true, mensaje: `Se generaron y repartieron ${leadsCreados} leads.` });
+    const mensaje = auto_repartir
+      ? `Se generaron y repartieron ${leadsCreados} leads.`
+      : `Se generaron ${leadsCreados} leads, listos para asignar.`;
+    res.status(201).json({ success: true, leads_creados: leadsCreados, mensaje });
   } catch (err) {
     await conn.rollback();
     console.error(err);
@@ -870,7 +878,16 @@ async function vendedoresDeZonaParaAsignar(req, res) {
               (SELECT COUNT(*) FROM leads l2 WHERE l2.vendedor_id = u.id AND l2.estado IN ('asignado','contactado')) AS cartera_total
        FROM usuarios u WHERE u.rol = 'vendedor' AND u.activo = 1 AND u.zona_id = ?`, [zonaId]
     );
-    res.json({ vendedores });
+
+    const [[{ disponibles_en_zona }]] = await pool.query(
+      `SELECT COUNT(*) AS disponibles_en_zona
+       FROM leads l
+       JOIN leads_base lb ON lb.id = l.lead_base_id
+       WHERE lb.carga_id = ? AND l.zona_id = ? AND l.estado = 'nuevo' AND l.vendedor_id IS NULL`,
+      [id, zonaId]
+    );
+
+    res.json({ vendedores, disponibles_en_zona: Number(disponibles_en_zona) });
   } catch (err) { console.error(err); res.status(500).json({ error: "Error" }); }
 }
 

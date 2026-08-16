@@ -482,7 +482,9 @@ async function cargarZonasDisponiblesOperativo(cargaId) {
 
 document.getElementById("op-select-zona").addEventListener("change", async (e) => {
   const zonaId = e.target.value;
-  document.getElementById("op-mensaje-asignacion").textContent = "";
+  const mensaje = document.getElementById("op-mensaje-asignacion");
+  mensaje.textContent = "";
+  mensaje.classList.remove("error");
 
   if (!zonaId) {
     document.getElementById("op-tabla-vendedores-wrap").classList.add("oculto");
@@ -490,8 +492,28 @@ document.getElementById("op-select-zona").addEventListener("change", async (e) =
   }
 
   opZonaSeleccionada = zonaId;
-  await cargarVendedoresDeZona(zonaId);
-  document.getElementById("op-tabla-vendedores-wrap").classList.remove("oculto");
+  document.getElementById("op-tabla-vendedores-wrap").classList.add("oculto");
+
+  try {
+    // Crea los leads operativos de esta zona (si aún no existían) SIN
+    // repartirlos automáticamente -- el admin elige las cantidades abajo.
+    await apiFetch("/leads/generar-operativos", {
+      method: "POST",
+      body: JSON.stringify({ carga_id: opCargaSeleccionada, zona_id: zonaId, auto_repartir: false }),
+    });
+
+    // El conteo de "pendientes por generar" baja tras generar, así que se refresca
+    const resumen = await apiFetch(`/leads/cargas/${opCargaSeleccionada}/resumen`);
+    document.getElementById("op-total-leads").textContent = resumen.total_leads;
+    document.getElementById("op-leads-disponibles").textContent = resumen.leads_disponibles;
+    await cargarDistritosOperativo(opCargaSeleccionada);
+
+    await cargarVendedoresDeZona(zonaId);
+    document.getElementById("op-tabla-vendedores-wrap").classList.remove("oculto");
+  } catch (err) {
+    mensaje.textContent = `Error al preparar la zona: ${err.message}`;
+    mensaje.classList.add("error");
+  }
 });
 
 async function cargarVendedoresDeZona(zonaId) {
