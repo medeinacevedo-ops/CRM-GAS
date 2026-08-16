@@ -927,7 +927,7 @@ async function crearLeadProspecto(req, res) {
 
 async function actualizarLead(req, res) {
   const { id } = req.params;
-  const { nombre, telefono, direccion, distrito } = req.body;
+  const { nombre, telefono, direccion, distrito, proxima_cita } = req.body;
   const vendedorId = req.usuario.id;
 
   try {
@@ -936,19 +936,27 @@ async function actualizarLead(req, res) {
     if (!lead) return res.status(404).json({ error: "Lead no encontrado o no autorizado" });
 
     // 2. Actualizar en leads_base (los datos del cliente)
-    // Usamos NULLIF para que si envían vacío no sobreescriba si ya había dato,
-    // pero en este caso queremos que se actualice con lo que el usuario puso.
-    await pool.query(
-      `UPDATE leads_base SET
-         nombre = ?,
-         telefono = ?,
-         direccion = ?,
-         distrito = ?
-       WHERE id = ?`,
-      [nombre, telefono, direccion, distrito, lead.lead_base_id]
-    );
+    if (nombre || telefono || direccion || distrito) {
+      await pool.query(
+        `UPDATE leads_base SET
+           nombre = COALESCE(?, nombre),
+           telefono = COALESCE(?, telefono),
+           direccion = COALESCE(?, direccion),
+           distrito = COALESCE(?, distrito)
+         WHERE id = ?`,
+        [nombre, telefono, direccion, distrito, lead.lead_base_id]
+      );
+    }
 
-    res.json({ success: true, mensaje: "Datos del cliente actualizados correctamente." });
+    // 3. Actualizar la cita en la tabla leads
+    if (proxima_cita !== undefined) {
+      await pool.query(
+        `UPDATE leads SET proxima_cita = ? WHERE id = ?`,
+        [proxima_cita || null, id]
+      );
+    }
+
+    res.json({ success: true, mensaje: "Datos actualizados correctamente." });
   } catch (err) {
     console.error("[Update Lead Error]", err);
     res.status(500).json({ error: "Error al actualizar los datos." });
