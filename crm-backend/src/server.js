@@ -23,7 +23,13 @@ const ubicacionRoutes = require("./routes/ubicacion");
 const reportesRoutes = require("./routes/reportes");
 const catalogoRoutes = require("./routes/catalogo");
 
-require("./tasks/autoCloseTask");
+// Intento de carga segura de tareas automáticas
+try {
+  require("./tasks/autoCloseTask");
+  console.log("Tareas automáticas cargadas.");
+} catch (e) {
+  console.warn("Advertencia: No se pudieron cargar las tareas automáticas, el servidor continuará arrancando.");
+}
 
 const app = express();
 
