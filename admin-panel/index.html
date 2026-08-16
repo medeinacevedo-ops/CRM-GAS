@@ -87,6 +87,28 @@
           </div>
         </div>
 
+        <div class="nav-grupo" data-grupo="catalogo">
+          <button class="nav-grupo-header">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+            <span>Catálogo de productos</span>
+            <svg class="nav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+          <div class="nav-grupo-items">
+            <button class="nav-item" data-vista="catalogo-productos">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+              <span>Productos</span>
+            </button>
+            <button class="nav-item" data-vista="catalogo-cargar">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m6 10 6-6 6 6"/><path d="M4 20h16"/></svg>
+              <span>Cargar catálogo</span>
+            </button>
+            <button class="nav-item" data-vista="catalogo-historial">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 7v5l3 3"/></svg>
+              <span>Historial de cargas</span>
+            </button>
+          </div>
+        </div>
+
         <div class="nav-grupo" data-grupo="personal">
           <button class="nav-grupo-header">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -553,6 +575,107 @@
             <p id="zona-mensaje" class="mensaje"></p>
           </div>
         </div>
+      </section>
+
+      <!-- Catálogo: Productos -->
+      <section id="panel-catalogo-productos" class="panel oculto">
+        <div class="panel-header">
+          <h2>Productos</h2>
+          <button id="btn-nuevo-producto" class="btn-secundario">+ Nuevo producto</button>
+        </div>
+
+        <div class="filtros-visitas">
+          <select id="filtro-catalogo-categoria"><option value="">Todas las categorías</option></select>
+          <input type="text" id="filtro-catalogo-q" placeholder="Buscar por nombre o código">
+          <button id="btn-filtrar-catalogo" class="btn-secundario">Filtrar</button>
+        </div>
+
+        <table class="tabla">
+          <thead>
+            <tr><th>Foto</th><th>Código</th><th>Nombre</th><th>Categoría</th><th>Precio</th><th>Comisión</th><th>Activo</th><th>Acciones</th></tr>
+          </thead>
+          <tbody id="tabla-catalogo-productos"></tbody>
+        </table>
+
+        <!-- Modal crear/editar producto -->
+        <div id="modal-producto" class="modal oculto">
+          <div class="modal-card">
+            <h3 id="modal-producto-titulo">Nuevo producto</h3>
+            <form id="form-producto">
+              <input type="hidden" id="producto-id">
+
+              <label for="producto-codigo-input">Código (opcional, debe ser único)</label>
+              <input type="text" id="producto-codigo-input" placeholder="Ej. TERMA-12L">
+
+              <label for="producto-nombre-input">Nombre</label>
+              <input type="text" id="producto-nombre-input" required placeholder="Ej. Terma a gas 12 litros">
+
+              <label for="producto-categoria-input">Categoría</label>
+              <input type="text" id="producto-categoria-input" list="lista-categorias-datalist" placeholder="Ej. Termas">
+              <datalist id="lista-categorias-datalist"></datalist>
+
+              <label for="producto-precio-input">Precio de lista (S/)</label>
+              <input type="number" id="producto-precio-input" step="0.01" min="0" placeholder="0.00">
+
+              <label for="producto-comision-input">Comisión (S/)</label>
+              <input type="number" id="producto-comision-input" step="0.01" min="0" placeholder="0.00">
+
+              <label for="producto-descripcion-input">Descripción</label>
+              <textarea id="producto-descripcion-input" rows="3" placeholder="Detalles del producto..."></textarea>
+
+              <div id="producto-seccion-imagenes" class="oculto">
+                <label>Imágenes</label>
+                <div id="lista-imagenes-producto" class="lista-imagenes-producto"></div>
+                <input type="file" id="producto-nueva-imagen-input" accept="image/png,image/jpeg">
+                <p class="ayuda-campo">Formatos jpg/png. La primera imagen que subas queda como principal; puedes cambiarla luego con "Hacer principal".</p>
+              </div>
+              <p id="producto-imagenes-ayuda-guardar" class="ayuda-campo">Guarda el producto primero para poder agregarle fotos.</p>
+
+              <div class="modal-acciones">
+                <button type="button" id="btn-cancelar-producto" class="btn-secundario">Cancelar</button>
+                <button type="submit">Guardar</button>
+              </div>
+            </form>
+            <p id="producto-mensaje" class="mensaje"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Catálogo: Cargar catálogo -->
+      <section id="panel-catalogo-cargar" class="panel oculto">
+        <div class="panel-header">
+          <h2>Cargar catálogo</h2>
+        </div>
+        <p class="descripcion">
+          Sube un CSV con los productos a cargar o actualizar. Si un <code>codigo</code> ya existe, se
+          actualiza en vez de duplicarse -- así puedes usar esto tanto para carga inicial como para
+          actualizaciones de precio masivas.
+        </p>
+
+        <button type="button" id="btn-descargar-plantilla-catalogo" class="btn-secundario">⬇ Descargar plantilla Excel</button>
+
+        <label for="archivo-catalogo-csv">Selecciona el archivo CSV</label>
+        <input type="file" id="archivo-catalogo-csv" accept=".csv">
+        <p class="descripcion" style="margin-top:4px;">La plantilla es en Excel para que sea fácil de llenar; antes de subirla, guárdala como <code>.csv</code> (Archivo → Guardar como → CSV).</p>
+
+        <div class="modal-acciones" style="justify-content:flex-start;">
+          <button type="button" id="btn-subir-catalogo" disabled title="Selecciona un archivo primero">Subir catálogo</button>
+        </div>
+        <p id="catalogo-cargar-mensaje" class="mensaje"></p>
+      </section>
+
+      <!-- Catálogo: Historial de cargas -->
+      <section id="panel-catalogo-historial" class="panel oculto">
+        <div class="panel-header">
+          <h2>Historial de cargas de catálogo</h2>
+          <button id="btn-refrescar-catalogo-historial" class="btn-secundario">Actualizar</button>
+        </div>
+        <table class="tabla">
+          <thead>
+            <tr><th>Fecha</th><th>Archivo</th><th>Productos</th><th>Cargado por</th></tr>
+          </thead>
+          <tbody id="tabla-catalogo-historial"></tbody>
+        </table>
       </section>
 
       <!-- Historial de visitas -->
