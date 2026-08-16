@@ -856,17 +856,24 @@ async function recalcularEstadoLeadTrasFusion(conn, leadId) {
  * leads_base de la carga que todavía NO se convirtieron en un lead
  * operativo (o sea, los que están listos/pendientes para generar).
  */
+/**
+ * "Leads disponibles" = leads de la carga que TODAVÍA no están en manos de
+ * un vendedor -- ya sea porque aún no se generaron para su zona, o porque
+ * se generaron pero nadie los tomó todavía. Se calcula como el total menos
+ * los que sí tienen vendedor_id (asignados), no importa si ya se generaron
+ * o no, para que el número baje en tiempo real con cada asignación.
+ */
 async function resumenCarga(req, res) {
   const { id } = req.params;
   const [rows] = await pool.query("SELECT COUNT(*) as total FROM leads_base WHERE carga_id = ?", [id]);
-  const [pendientes] = await pool.query(
+  const [asignados] = await pool.query(
     `SELECT COUNT(*) as total
-     FROM leads_base lb
-     WHERE lb.carga_id = ?
-       AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.lead_base_id = lb.id)`,
+     FROM leads l
+     JOIN leads_base lb ON lb.id = l.lead_base_id
+     WHERE lb.carga_id = ? AND l.vendedor_id IS NOT NULL`,
     [id]
   );
-  res.json({ total_leads: rows[0].total, leads_disponibles: pendientes[0].total });
+  res.json({ total_leads: rows[0].total, leads_disponibles: rows[0].total - asignados[0].total });
 }
 
 /**
