@@ -23,10 +23,6 @@ const ubicacionRoutes = require("./routes/ubicacion");
 const reportesRoutes = require("./routes/reportes");
 const catalogoRoutes = require("./routes/catalogo");
 
-// Registra el cron de cierre automatico a medianoche (tasks/autoCloseTask.js).
-// Antes este archivo no se requeria en ningun lado del proyecto, asi que
-// el cron nunca llegaba a programarse -- ver la nota de robustez en
-// jornadaController.marcarIngreso para la red de seguridad complementaria.
 require("./tasks/autoCloseTask");
 
 const app = express();
@@ -34,16 +30,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Servir archivos estaticos (fotos y firmas)
 app.use(express.static(path.join(__dirname, "..")));
 
-app.get("/health", (req, res) => res.json({ status: "A3 PULSE ONLINE" }));
+app.get("/health", (req, res) => res.json({ status: "A3 PULSE ONLINE", time: new Date() }));
 
-app.get("/api/ping-catalogo", (req, res) => res.json({ message: "Catalogo reachable", time: new Date() }));
-
-// RUTA DE CATÁLOGO (Prioridad Alta para Debug)
-app.use("/api/catalogo", catalogoRoutes);
-
+// ENDPOINTS DE LA API
 app.use("/api/auth", authRoutes);
 app.use("/api/leads", leadsRoutes);
 app.use("/api/jornada", jornadaRoutes);
@@ -59,24 +50,17 @@ app.use("/api/checkpoints", checkpointsRoutes);
 app.use("/api/notificaciones", notificacionesRoutes);
 app.use("/api/ubicacion", ubicacionRoutes);
 app.use("/api/reportes", reportesRoutes);
-// Motor de Catálogo Digital activado
-// app.use("/api/catalogo", catalogoRoutes); // Moviéndolo arriba para evitar conflictos de rutas
+app.use("/api/catalogo", catalogoRoutes);
 
-// Manejo de errores no controlados
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: "Error interno del servidor" });
 });
 
 const PORT = process.env.PORT || 3000;
-
-// IMPORTANTE: Socket.IO necesita un servidor HTTP explicito para "engancharse" encima
-// de Express -- por eso ya no se usa app.listen() directo, sino http.createServer(app)
-// y luego socket.init(server) antes de poner el servidor a escuchar.
 const server = http.createServer(app);
 socket.init(server);
 
 server.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
-  console.log(`Socket.IO listo para notificaciones en tiempo real`);
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
 });
