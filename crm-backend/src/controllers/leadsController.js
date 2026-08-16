@@ -800,6 +800,45 @@ async function resumenCarga(req, res) {
 }
 
 /**
+ * Distritos presentes en una carga, con cuántos leads_base trae cada uno
+ * y si ya coinciden con alguna zona registrada. Pensada para la tarjeta
+ * de "Generar operativos": si un distrito no matchea ninguna zona, el
+ * admin puede ver de inmediato qué zona le falta crear (con el mismo
+ * texto de distrito) en vez de adivinar por qué no aparece en el selector.
+ */
+async function distritosDeCarga(req, res) {
+  const { id } = req.params;
+  try {
+    const [rows] = await pool.query(
+      `SELECT lb.distrito,
+              COUNT(*) AS total_leads,
+              z.id AS zona_id,
+              z.nombre AS zona_nombre
+       FROM leads_base lb
+       LEFT JOIN zonas z
+         ON z.distrito COLLATE utf8mb4_unicode_ci = lb.distrito COLLATE utf8mb4_unicode_ci
+       WHERE lb.carga_id = ?
+       GROUP BY lb.distrito, z.id, z.nombre
+       ORDER BY z.id IS NULL DESC, total_leads DESC`,
+      [id]
+    );
+
+    const distritos = rows.map((r) => ({
+      distrito: r.distrito || "(sin distrito)",
+      total_leads: Number(r.total_leads),
+      zona_id: r.zona_id,
+      zona_nombre: r.zona_nombre,
+      tiene_zona: r.zona_id !== null,
+    }));
+
+    res.json({ distritos });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener los distritos de la carga" });
+  }
+}
+
+/**
  * Zonas disponibles para GENERAR (no para repartir). Debe poder listar
  * zonas incluso cuando `leads` todavía no tiene ninguna fila para esta
  * carga — por eso el match es leads_base.distrito contra zonas.distrito
@@ -988,7 +1027,7 @@ async function actualizarLead(req, res) {
 
 module.exports = {
   cargarBase, listarCargas, generarLeadsOperativos, repartirAutomatico,
-  misLeads, resumenCarga, zonasConDisponiblesDeCarga, vendedoresDeZonaParaAsignar,
+  misLeads, resumenCarga, distritosDeCarga, zonasConDisponiblesDeCarga, vendedoresDeZonaParaAsignar,
   asignarIndividual, resumenZonasCarga, crearLeadProspecto, actualizarLead,
   leadsDeVendedor, buscarLeadsAdmin, reasignarLeadAdmin,
   previsualizarDeshacerCarga, deshacerCarga, reasignarCarteraCompleta,

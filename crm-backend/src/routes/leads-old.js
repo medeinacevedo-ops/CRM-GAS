@@ -23,12 +23,14 @@ const {
   reasignarCarteraCompleta,
   detectarLeadsDuplicados,
   fusionarLeadsDuplicados,
+  analizarBase,
 } = require("../controllers/leadsController");
 
 const upload = multer({ dest: "uploads/" });
 
 // Solo administrador puede cargar y repartir la base
 router.post("/cargar-base", requireAuth, requireRole("admin"), upload.single("archivo"), cargarBase);
+router.post("/analizar-base", requireAuth, requireRole("admin"), upload.single("archivo"), analizarBase);
 router.get("/cargas", requireAuth, requireRole("admin"), listarCargas);
 router.post("/generar-operativos", requireAuth, requireRole("admin"), generarLeadsOperativos);
 router.post("/repartir-automatico", requireAuth, requireRole("admin"), repartirAutomatico);

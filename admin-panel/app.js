@@ -336,6 +336,7 @@ async function inicializarPantallaOperativos() {
 
 function resetearPasosOperativos() {
   document.getElementById("op-tarjeta-resumen").classList.add("oculto");
+  document.getElementById("op-tarjeta-distritos").classList.add("oculto");
   document.getElementById("op-paso-zona").classList.add("oculto");
   document.getElementById("op-tabla-vendedores-wrap").classList.add("oculto");
   document.getElementById("op-mensaje-asignacion").textContent = "";
@@ -351,6 +352,7 @@ document.getElementById("op-select-base").addEventListener("change", async (e) =
 
   if (!cargaId) {
     document.getElementById("op-tarjeta-resumen").classList.add("oculto");
+    document.getElementById("op-tarjeta-distritos").classList.add("oculto");
     return;
   }
 
@@ -360,23 +362,106 @@ document.getElementById("op-select-base").addEventListener("change", async (e) =
     const resumen = await apiFetch(`/leads/cargas/${cargaId}/resumen`);
     document.getElementById("op-total-leads").textContent = resumen.total_leads;
     document.getElementById("op-leads-disponibles").textContent = resumen.leads_disponibles;
-
-    const sinZonaWrap = document.getElementById("op-sin-zona-wrap");
-    if (resumen.sin_zona > 0) {
-      document.getElementById("op-sin-zona").textContent = resumen.sin_zona;
-      sinZonaWrap.classList.remove("oculto");
-    } else {
-      sinZonaWrap.classList.add("oculto");
-    }
-
     document.getElementById("op-tarjeta-resumen").classList.remove("oculto");
 
+    await cargarDistritosOperativo(cargaId);
     await cargarZonasDisponiblesOperativo(cargaId);
     document.getElementById("op-paso-zona").classList.remove("oculto");
   } catch (err) {
     alert(`Error al cargar el resumen: ${err.message}`);
   }
 });
+
+async function cargarDistritosOperativo(cargaId) {
+  const wrap = document.getElementById("op-tarjeta-distritos");
+  const lista = document.getElementById("op-lista-distritos");
+  lista.innerHTML = `<p class="descripcion">Cargando distritos...</p>`;
+  wrap.classList.remove("oculto");
+
+  try {
+    const { distritos } = await apiFetch(`/leads/cargas/${cargaId}/distritos`);
+
+    const sinZonaTotal = distritos.filter((d) => !d.tiene_zona).reduce((acc, d) => acc + d.total_leads, 0);
+    const sinZonaWrap = document.getElementById("op-sin-zona-wrap");
+    if (sinZonaTotal > 0) {
+      document.getElementById("op-sin-zona").textContent = sinZonaTotal;
+      sinZonaWrap.classList.remove("oculto");
+    } else {
+      sinZonaWrap.classList.add("oculto");
+    }
+
+    if (distritos.length === 0) {
+      lista.innerHTML = `<p class="descripcion">Esta base no tiene distritos registrados.</p>`;
+      return;
+    }
+
+    lista.innerHTML = distritos
+      .map((d, i) => {
+        const filaId = `distrito-fila-${i}`;
+        if (d.tiene_zona) {
+          return `
+            <div class="fila-distrito">
+              <div class="fila-distrito-info">
+                <span class="fila-distrito-nombre">${d.distrito}</span>
+                <span class="fila-distrito-count">${d.total_leads} leads</span>
+              </div>
+              <span class="fila-distrito-badge">Zona: ${d.zona_nombre}</span>
+            </div>`;
+        }
+        return `
+          <div class="fila-distrito sin-zona" id="${filaId}">
+            <div class="fila-distrito-info">
+              <span class="fila-distrito-nombre">${d.distrito}</span>
+              <span class="fila-distrito-count">${d.total_leads} leads — sin zona coincidente</span>
+            </div>
+            <button type="button" class="fila-distrito-btn-crear" onclick="mostrarFormCrearZona('${filaId}', '${d.distrito.replace(/'/g, "\\'")}')">
+              Crear zona
+            </button>
+          </div>`;
+      })
+      .join("");
+  } catch (err) {
+    lista.innerHTML = `<p class="descripcion">Error al cargar los distritos: ${err.message}</p>`;
+  }
+}
+
+function mostrarFormCrearZona(filaId, distrito) {
+  const fila = document.getElementById(filaId);
+  if (!fila || fila.querySelector(".form-crear-zona-inline")) return;
+
+  const form = document.createElement("div");
+  form.className = "form-crear-zona-inline";
+  form.innerHTML = `
+    <input type="text" placeholder="Nombre de la zona" value="${distrito}" />
+    <button type="button">Guardar</button>
+  `;
+  fila.appendChild(form);
+
+  const input = form.querySelector("input");
+  const boton = form.querySelector("button");
+  input.focus();
+  input.select();
+
+  boton.addEventListener("click", async () => {
+    const nombre = input.value.trim();
+    if (!nombre) { input.focus(); return; }
+
+    boton.disabled = true;
+    boton.textContent = "Guardando...";
+    try {
+      await apiFetch(`/zonas`, {
+        method: "POST",
+        body: JSON.stringify({ nombre, distrito }),
+      });
+      await cargarDistritosOperativo(opCargaSeleccionada);
+      await cargarZonasDisponiblesOperativo(opCargaSeleccionada);
+    } catch (err) {
+      alert(`Error al crear la zona: ${err.message}`);
+      boton.disabled = false;
+      boton.textContent = "Guardar";
+    }
+  });
+}
 
 async function cargarZonasDisponiblesOperativo(cargaId) {
   const select = document.getElementById("op-select-zona");

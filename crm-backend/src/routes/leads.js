@@ -9,6 +9,7 @@ const {
   repartirAutomatico,
   misLeads,
   resumenCarga,
+  distritosDeCarga,
   zonasConDisponiblesDeCarga,
   vendedoresDeZonaParaAsignar,
   asignarIndividual,
@@ -37,6 +38,7 @@ router.post("/repartir-automatico", requireAuth, requireRole("admin"), repartirA
 
 // Gestion operativa: seleccionar base -> ver resumen -> elegir zona -> asignar por vendedor
 router.get("/cargas/:id/resumen", requireAuth, requireRole("admin"), resumenCarga);
+router.get("/cargas/:id/distritos", requireAuth, requireRole("admin"), distritosDeCarga);
 router.get("/cargas/:id/zonas", requireAuth, requireRole("admin"), zonasConDisponiblesDeCarga);
 router.get("/cargas/:id/zonas/:zonaId/vendedores", requireAuth, requireRole("admin"), vendedoresDeZonaParaAsignar);
 router.post("/asignar-individual", requireAuth, requireRole("admin"), asignarIndividual);

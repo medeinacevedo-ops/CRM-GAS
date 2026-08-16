@@ -466,6 +466,69 @@ form button:hover { background: #236360; }
 .resumen-op-valor.destacado { color: var(--teal); }
 .resumen-op-valor.alerta { color: var(--coral); font-size: 20px; }
 
+.tarjeta-distritos { max-width: 620px; margin-bottom: 22px; }
+.lista-distritos { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.fila-distrito {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.fila-distrito.sin-zona { border-color: var(--coral); background: #fdf3f2; }
+.fila-distrito-info { display: flex; flex-direction: column; gap: 2px; }
+.fila-distrito-nombre { font-size: 13.5px; font-weight: 600; color: var(--navy-2); }
+.fila-distrito-count { font-size: 11.5px; color: var(--text-muted); }
+.fila-distrito-badge {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #e6f2f1;
+  color: var(--teal);
+  white-space: nowrap;
+}
+.fila-distrito-btn-crear {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--coral);
+  background: white;
+  color: var(--coral);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fila-distrito-btn-crear:hover { background: var(--coral); color: white; }
+.form-crear-zona-inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  width: 100%;
+}
+.form-crear-zona-inline input {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.form-crear-zona-inline button {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: none;
+  background: var(--teal);
+  color: white;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 #op-tabla-vendedores input[type="number"] {
   width: 90px;
   padding: 6px 8px;
