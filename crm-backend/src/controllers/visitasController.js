@@ -23,7 +23,7 @@ function normalizarResultado(resultado) {
  * Si el resultado es 'venta_cerrada', tambien crea el registro en `ventas`.
  */
 async function registrarVisita(req, res) {
-  const { lead_id, lat, lng, resultado, notas, producto, monto, proxima_cita } = req.body;
+  const { lead_id, lat, lng, resultado, notas, producto, producto_id, monto, proxima_cita } = req.body;
   const vendedorId = req.usuario.id;
 
   if (!lead_id || !lat || !lng || !resultado) {
@@ -53,13 +53,10 @@ async function registrarVisita(req, res) {
 
     const resultadoDB = normalizarResultado(resultado);
 
-    // Obtener URLs de imagen: Cloudinary devuelve .path (URL), Local devuelve .filename
     const getFileUrl = (files, field) => {
       if (!files || !files[field]) return null;
       const file = files[field][0];
-      // Si el motor es Cloudinary, 'path' es la URL completa
       if (file.path && file.path.startsWith('http')) return file.path;
-      // Si es Local, usamos el filename prefijado
       return `/uploads/${file.filename}`;
     };
 
@@ -72,7 +69,6 @@ async function registrarVisita(req, res) {
       [lead_id, vendedorId, resultadoDB, lat, lng, Math.round(distancia), notas || null, fotoUrl, firmaUrl]
     );
 
-    // Si hay proxima_cita, actualizarla en el lead
     if (proxima_cita) {
       await conn.query(`UPDATE leads SET proxima_cita = ? WHERE id = ?`, [proxima_cita, lead_id]);
     }
@@ -82,9 +78,21 @@ async function registrarVisita(req, res) {
         await conn.rollback();
         return res.status(400).json({ error: "producto y monto son requeridos para una venta cerrada" });
       }
+
+      // Obtener comisión del producto si hay producto_id
+      let comisionFinal = 0;
+      if (producto_id) {
+          const [[prod]] = await conn.query("SELECT comision FROM productos WHERE id = ?", [producto_id]);
+          if (prod) comisionFinal = prod.comision;
+      } else {
+          // Fallback a configuración general si no hay producto_id
+          const [[conf]] = await conn.query("SELECT valor FROM configuraciones WHERE clave = 'comision_por_venta'");
+          comisionFinal = Number(conf?.valor || 50);
+      }
+
       await conn.query(
-        `INSERT INTO ventas (visita_id, producto, monto) VALUES (?, ?, ?)`,
-        [visitaResult.insertId, producto, monto]
+        `INSERT INTO ventas (visita_id, producto, producto_id, monto, comision) VALUES (?, ?, ?, ?, ?)`,
+        [visitaResult.insertId, producto, producto_id || null, monto, comisionFinal]
       );
       await conn.query(`UPDATE leads SET estado = 'vendido' WHERE id = ?`, [lead_id]);
     } else if (resultado === "no_interesado") {

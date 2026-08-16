@@ -56,14 +56,14 @@ async function kpisVendedor(req, res) {
     const [configs] = await pool.query("SELECT clave, valor FROM configuraciones");
     const configMap = Object.fromEntries(configs.map(c => [c.clave, c.valor]));
 
-    const COMISION_FIJA = Number(configMap['comision_por_venta'] || 50);
     const META_VENTAS_MES = Number(configMap['meta_ventas_mes'] || 20);
 
     const [[hoy]] = await pool.query(
       `SELECT
          COUNT(*) AS visitados,
          SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS ventas,
-         COALESCE(SUM(ve.monto), 0) AS monto
+         COALESCE(SUM(ve.monto), 0) AS monto,
+         COALESCE(SUM(ve.comision), 0) AS comisiones
        FROM visitas v
        LEFT JOIN ventas ve ON ve.visita_id = v.id
        WHERE v.vendedor_id = ? AND DATE(v.fecha) = DATE(NOW())`,
@@ -80,7 +80,8 @@ async function kpisVendedor(req, res) {
       `SELECT
          COUNT(*) AS visitados,
          SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS ventas,
-         COALESCE(SUM(ve.monto), 0) AS monto
+         COALESCE(SUM(ve.monto), 0) AS monto,
+         COALESCE(SUM(ve.comision), 0) AS comisiones
        FROM visitas v
        LEFT JOIN ventas ve ON ve.visita_id = v.id
        WHERE v.vendedor_id = ?
@@ -97,14 +98,14 @@ async function kpisVendedor(req, res) {
         pendientes: asignadosHoy.total,
         ventas: hoy.ventas || 0,
         monto: hoy.monto,
-        comisiones: (hoy.ventas || 0) * COMISION_FIJA,
+        comisiones: hoy.comisiones,
         conversion_pct: conversionHoy,
       },
       mes: {
         visitados: mes.visitados,
         ventas: mes.ventas || 0,
         monto: mes.monto,
-        comisiones: (mes.ventas || 0) * COMISION_FIJA,
+        comisiones: mes.comisiones,
         meta_ventas: META_VENTAS_MES,
         conversion_pct: conversionMes,
       },
