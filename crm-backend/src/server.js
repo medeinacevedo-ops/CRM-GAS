@@ -54,6 +54,7 @@ app.use("/api/checkpoints", checkpointsRoutes);
 app.use("/api/notificaciones", notificacionesRoutes);
 app.use("/api/ubicacion", ubicacionRoutes);
 app.use("/api/reportes", reportesRoutes);
+// Motor de Catálogo Digital activado
 app.use("/api/catalogo", catalogoRoutes);
 
 // Manejo de errores no controlados
