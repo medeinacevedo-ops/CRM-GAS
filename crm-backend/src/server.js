@@ -21,6 +21,7 @@ const checkpointsRoutes = require("./routes/checkpoints");
 const notificacionesRoutes = require("./routes/notificaciones");
 const ubicacionRoutes = require("./routes/ubicacion");
 const reportesRoutes = require("./routes/reportes");
+const catalogoRoutes = require("./routes/catalogo");
 
 // Registra el cron de cierre automatico a medianoche (tasks/autoCloseTask.js).
 // Antes este archivo no se requeria en ningun lado del proyecto, asi que
@@ -53,6 +54,7 @@ app.use("/api/checkpoints", checkpointsRoutes);
 app.use("/api/notificaciones", notificacionesRoutes);
 app.use("/api/ubicacion", ubicacionRoutes);
 app.use("/api/reportes", reportesRoutes);
+app.use("/api/catalogo", catalogoRoutes);
 
 // Manejo de errores no controlados
 app.use((err, req, res, next) => {
