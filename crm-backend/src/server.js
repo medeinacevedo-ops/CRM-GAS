@@ -22,6 +22,7 @@ const notificacionesRoutes = require("./routes/notificaciones");
 const ubicacionRoutes = require("./routes/ubicacion");
 const reportesRoutes = require("./routes/reportes");
 const catalogoRoutes = require("./routes/catalogo");
+const sosRoutes = require("./routes/sos");
 
 // Intento de carga segura de tareas automáticas
 try {
@@ -57,6 +58,7 @@ app.use("/api/notificaciones", notificacionesRoutes);
 app.use("/api/ubicacion", ubicacionRoutes);
 app.use("/api/reportes", reportesRoutes);
 app.use("/api/catalogo", catalogoRoutes);
+app.use("/api/sos", sosRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
