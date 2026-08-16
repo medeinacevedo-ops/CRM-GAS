@@ -39,6 +39,9 @@ app.use(express.static(path.join(__dirname, "..")));
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
+// RUTA DE CATÁLOGO (Prioridad Alta para Debug)
+app.use("/api/catalogo", catalogoRoutes);
+
 app.use("/api/auth", authRoutes);
 app.use("/api/leads", leadsRoutes);
 app.use("/api/jornada", jornadaRoutes);
@@ -55,7 +58,7 @@ app.use("/api/notificaciones", notificacionesRoutes);
 app.use("/api/ubicacion", ubicacionRoutes);
 app.use("/api/reportes", reportesRoutes);
 // Motor de Catálogo Digital activado
-app.use("/api/catalogo", catalogoRoutes);
+// app.use("/api/catalogo", catalogoRoutes); // Moviéndolo arriba para evitar conflictos de rutas
 
 // Manejo de errores no controlados
 app.use((err, req, res, next) => {
