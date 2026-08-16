@@ -2,6 +2,27 @@ const fs = require("fs");
 const { parse } = require("csv-parse/sync");
 const pool = require("../config/db");
 const { leerContenidoCsv } = require("../utils/csv");
+const socket = require("../socket");
+
+/**
+ * Notifica vía voz (socket) a uno o varios vendedores que han recibido leads.
+ * @param {Object} impactados Objeto { vendedor_id: cantidad_leads }
+ */
+function notificarNuevosLeads(impactados) {
+  try {
+    const io = socket.getIo();
+    for (const vId of Object.keys(impactados)) {
+      if (impactados[vId] > 0) {
+        io.to(`user_${vId}`).emit("nuevos_leads", {
+          cantidad: impactados[vId],
+          mensaje: `Se te han asignado ${impactados[vId]} nuevos clientes.`
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Error al emitir socket de voz:", e.message);
+  }
+}
 
 /**
  * Sube un archivo CSV con columnas: nombre,telefono,direccion,lat,lng,distrito
@@ -268,6 +289,8 @@ async function generarLeadsOperativos(req, res) {
   if (!carga_id || !zona_id) return res.status(400).json({ error: "Carga y Zona son requeridas" });
 
   const conn = await pool.getConnection();
+  const vendedoresImpactados = {}; // Para seguimiento de voz
+
   try {
     await conn.beginTransaction();
 
@@ -306,12 +329,16 @@ async function generarLeadsOperativos(req, res) {
           const v = vendedores[i % vendedores.length];
           await conn.query(`UPDATE leads SET vendedor_id = ?, estado = 'asignado', fecha_asignacion = NOW() WHERE id = ?`, [v.id, lead.id]);
           await conn.query(`INSERT INTO asignaciones (lead_id, vendedor_id, asignado_por, tipo) VALUES (?, ?, ?, 'automatico')`, [lead.id, v.id, adminId]);
+
+          vendedoresImpactados[v.id] = (vendedoresImpactados[v.id] || 0) + 1;
           i++;
         }
       }
     }
 
     await conn.commit();
+    notificarNuevosLeads(vendedoresImpactados);
+
     const mensaje = auto_repartir
       ? `Se generaron y repartieron ${leadsCreados} leads.`
       : `Se generaron ${leadsCreados} leads, listos para asignar.`;
@@ -339,14 +366,17 @@ async function repartirZona(conn, zonaId, adminId, cargaId = null) {
   const [leads] = await conn.query(queryLeads, params);
   if (leads.length === 0) return { zona_id: zonaId, leads_asignados: 0 };
 
+  const impactados = {};
   let i = 0;
   for (const lead of leads) {
     const v = vendedores[i % vendedores.length];
     await conn.query(`UPDATE leads SET vendedor_id = ?, estado = 'asignado', fecha_asignacion = NOW() WHERE id = ?`, [v.id, lead.id]);
     await conn.query(`INSERT INTO asignaciones (lead_id, vendedor_id, asignado_por, tipo) VALUES (?, ?, ?, 'automatico')`, [lead.id, v.id, adminId]);
+
+    impactados[v.id] = (impactados[v.id] || 0) + 1;
     i++;
   }
-  return { zona_id: zonaId, leads_asignados: leads.length };
+  return { zona_id: zonaId, leads_asignados: leads.length, impactados };
 }
 
 async function repartirAutomatico(req, res) {
@@ -355,14 +385,27 @@ async function repartirAutomatico(req, res) {
   try {
     await conn.beginTransaction();
     let resultados;
+    const impactadosGlobal = {};
+
     if (todas_las_zonas) {
       const [zonas] = await conn.query(`SELECT DISTINCT zona_id FROM leads WHERE estado = 'nuevo'`);
       resultados = [];
-      for (const z of zonas) resultados.push(await repartirZona(conn, z.zona_id, req.usuario.id, carga_id));
+      for (const z of zonas) {
+        const resZona = await repartirZona(conn, z.zona_id, req.usuario.id, carga_id);
+        resultados.push(resZona);
+        if (resZona.impactados) {
+          Object.assign(impactadosGlobal, resZona.impactados);
+        }
+      }
     } else {
-      resultados = [await repartirZona(conn, zona_id, req.usuario.id, carga_id)];
+      const resZona = await repartirZona(conn, zona_id, req.usuario.id, carga_id);
+      resultados = [resZona];
+      if (resZona.impactados) {
+        Object.assign(impactadosGlobal, resZona.impactados);
+      }
     }
     await conn.commit();
+    notificarNuevosLeads(impactadosGlobal);
     res.json({ resultados });
   } catch (err) {
     await conn.rollback();
@@ -506,6 +549,8 @@ async function reasignarLeadAdmin(req, res) {
       `INSERT INTO asignaciones (lead_id, vendedor_id, asignado_por, tipo) VALUES (?, ?, ?, 'manual')`,
       [id, vendedor_id, adminId]
     );
+
+    notificarNuevosLeads({ [vendedor_id]: 1 });
 
     res.json({ success: true, mensaje: "Lead reasignado" });
   } catch (err) {
@@ -668,6 +713,7 @@ async function reasignarCarteraCompleta(req, res) {
     );
 
     await conn.commit();
+    notificarNuevosLeads({ [vendedor_destino_id]: ids.length });
     res.json({ success: true, mensaje: `${ids.length} leads reasignados`, total: ids.length });
   } catch (err) {
     await conn.rollback();
@@ -960,6 +1006,15 @@ async function asignarIndividual(req, res) {
     }
 
     await conn.commit();
+
+    const impactados = {};
+    for (const a of asignaciones) {
+        if (a.vendedor_id) {
+            impactados[a.vendedor_id] = (impactados[a.vendedor_id] || 0) + Number(a.cantidad || 0);
+        }
+    }
+    notificarNuevosLeads(impactados);
+
     res.json({ success: true, resultados });
   } catch (err) {
     await conn.rollback();
