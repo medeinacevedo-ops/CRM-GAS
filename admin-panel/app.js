@@ -490,7 +490,11 @@ document.getElementById("op-select-zona").addEventListener("change", async (e) =
   }
 
   opZonaSeleccionada = zonaId;
+  await cargarVendedoresDeZona(zonaId);
+  document.getElementById("op-tabla-vendedores-wrap").classList.remove("oculto");
+});
 
+async function cargarVendedoresDeZona(zonaId) {
   try {
     const data = await apiFetch(`/leads/cargas/${opCargaSeleccionada}/zonas/${zonaId}/vendedores`);
 
@@ -512,12 +516,10 @@ document.getElementById("op-select-zona").addEventListener("change", async (e) =
         )
         .join("");
     }
-
-    document.getElementById("op-tabla-vendedores-wrap").classList.remove("oculto");
   } catch (err) {
     alert(`Error al cargar vendedores: ${err.message}`);
   }
-});
+}
 
 document.getElementById("op-btn-asignar").addEventListener("click", async () => {
   const mensaje = document.getElementById("op-mensaje-asignacion");
@@ -542,9 +544,19 @@ document.getElementById("op-btn-asignar").addEventListener("click", async () => 
 
     const totalAsignados = data.resultados.reduce((sum, r) => sum + r.asignados, 0);
     mensaje.textContent = `${totalAsignados} leads asignados correctamente.`;
+    mensaje.classList.remove("error");
 
-    // Refresca el resumen y la lista de vendedores para reflejar lo ya asignado
-    document.getElementById("op-select-base").dispatchEvent(new Event("change"));
+    // Refresca los contadores del resumen y la tabla de vendedores de la
+    // MISMA zona (con las carteras y disponibles actualizados), sin tocar
+    // la selección de base/zona ni borrar el mensaje que se acaba de mostrar.
+    const resumen = await apiFetch(`/leads/cargas/${opCargaSeleccionada}/resumen`);
+    document.getElementById("op-total-leads").textContent = resumen.total_leads;
+    document.getElementById("op-leads-disponibles").textContent = resumen.leads_disponibles;
+
+    await cargarVendedoresDeZona(opZonaSeleccionada);
+
+    // Los inputs de cantidad se reinician a 0 para evitar reenviar la misma asignación por error
+    document.querySelectorAll(".op-input-cantidad").forEach((input) => (input.value = 0));
   } catch (err) {
     mensaje.textContent = err.message;
     mensaje.classList.add("error");
