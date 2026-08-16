@@ -37,7 +37,7 @@ app.use(express.json());
 // Servir archivos estaticos (fotos y firmas)
 app.use(express.static(path.join(__dirname, "..")));
 
-app.get("/health", (req, res) => res.json({ status: "ok", version: "A3_PULSE_V2" }));
+app.get("/health", (req, res) => res.json({ status: "A3 PULSE ONLINE" }));
 
 app.get("/api/ping-catalogo", (req, res) => res.json({ message: "Catalogo reachable", time: new Date() }));
 
