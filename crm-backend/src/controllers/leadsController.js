@@ -874,8 +874,67 @@ async function vendedoresDeZonaParaAsignar(req, res) {
   } catch (err) { console.error(err); res.status(500).json({ error: "Error" }); }
 }
 
+/**
+ * Asigna leads disponibles de una zona/carga a vendedores específicos,
+ * en las cantidades que el admin definió en la pantalla de "Generar
+ * operativos" (paso 3). Toma los leads más antiguos primero (id ASC)
+ * y respeta lo que realmente haya disponible: si un vendedor pidió más
+ * de lo que queda, se le asigna lo que alcance y se refleja en la
+ * respuesta para que el frontend no asuma que se cumplió el pedido.
+ */
 async function asignarIndividual(req, res) {
-    res.json({ success: true });
+  const { carga_id, zona_id, asignaciones } = req.body;
+  const adminId = req.usuario.id;
+
+  if (!carga_id || !zona_id || !Array.isArray(asignaciones) || asignaciones.length === 0) {
+    return res.status(400).json({ error: "carga_id, zona_id y asignaciones son requeridos" });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const resultados = [];
+
+    for (const { vendedor_id, cantidad } of asignaciones) {
+      const cantidadPedida = Number(cantidad) || 0;
+      if (!vendedor_id || cantidadPedida <= 0) {
+        resultados.push({ vendedor_id, asignados: 0 });
+        continue;
+      }
+
+      const [leadsDisponibles] = await conn.query(
+        `SELECT l.id FROM leads l
+         JOIN leads_base lb ON lb.id = l.lead_base_id
+         WHERE lb.carga_id = ? AND l.zona_id = ? AND l.estado = 'nuevo' AND l.vendedor_id IS NULL
+         ORDER BY l.id ASC
+         LIMIT ?`,
+        [carga_id, zona_id, cantidadPedida]
+      );
+
+      for (const lead of leadsDisponibles) {
+        await conn.query(
+          `UPDATE leads SET vendedor_id = ?, estado = 'asignado', fecha_asignacion = NOW() WHERE id = ?`,
+          [vendedor_id, lead.id]
+        );
+        await conn.query(
+          `INSERT INTO asignaciones (lead_id, vendedor_id, asignado_por, tipo) VALUES (?, ?, ?, 'manual')`,
+          [lead.id, vendedor_id, adminId]
+        );
+      }
+
+      resultados.push({ vendedor_id, asignados: leadsDisponibles.length });
+    }
+
+    await conn.commit();
+    res.json({ success: true, resultados });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ error: "Error al asignar los leads" });
+  } finally {
+    conn.release();
+  }
 }
 
 /**
