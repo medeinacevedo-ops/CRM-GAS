@@ -97,13 +97,19 @@ body {
   flex-direction: column;
 }
 
-.marca {
-  font-size: 16px;
-  font-weight: 700;
+.marca-logo-wrap {
+  background: white;
+  padding: 8px 14px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
   margin: 0 0 32px 8px;
-  color: white;
 }
-.marca span { color: var(--gold); }
+.marca-logo-wrap img {
+  display: block;
+  height: 28px;
+  width: auto;
+}
 
 .sidebar nav { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
 
