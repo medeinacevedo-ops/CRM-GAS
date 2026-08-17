@@ -75,19 +75,33 @@ async function importarProductos(req, res) {
     const contenido = leerContenidoCsv(req.file.path);
     const registros = parse(contenido, { columns: true, skip_empty_lines: true, trim: true });
 
+    if (registros.length === 0) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: "El archivo no contiene registros" });
+    }
+
+    // Validar antes de tocar la base: un solo nombre vacío no debe
+    // traducirse en un error críptico de MySQL a mitad de la transacción.
+    const filaSinNombre = registros.findIndex((r) => !r.nombre || !r.nombre.trim());
+    if (filaSinNombre !== -1) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: `Fila ${filaSinNombre + 2} del CSV: falta el nombre del producto.` });
+    }
+
     await conn.beginTransaction();
 
     const [carga] = await conn.query(
       "INSERT INTO cargas_productos (nombre_archivo, cargado_por, total_registros) VALUES (?, ?, ?)",
       [req.file.originalname, req.usuario.id, registros.length]
     );
+    const cargaId = carga.insertId;
 
     for (const r of registros) {
       // Usar INSERT ... ON DUPLICATE KEY UPDATE para el código de producto
       const tipoValido = ["Producto", "Tarifa", "Servicio"].includes(r.tipo) ? r.tipo : "Producto";
       await conn.query(`
-        INSERT INTO productos (codigo, nombre, categoria, precio_lista, comision, descripcion, especificaciones, marca, unidad, tipo)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO productos (codigo, nombre, categoria, precio_lista, comision, descripcion, especificaciones, marca, unidad, tipo, carga_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           nombre = VALUES(nombre),
           categoria = VALUES(categoria),
@@ -97,7 +111,8 @@ async function importarProductos(req, res) {
           especificaciones = VALUES(especificaciones),
           marca = VALUES(marca),
           unidad = VALUES(unidad),
-          tipo = VALUES(tipo)
+          tipo = VALUES(tipo),
+          carga_id = VALUES(carga_id)
       `, [
         r.codigo || null,
         r.nombre,
@@ -108,7 +123,8 @@ async function importarProductos(req, res) {
         JSON.stringify(r),
         r.marca || null,
         r.unidad || null,
-        tipoValido
+        tipoValido,
+        cargaId
       ]);
     }
 
@@ -118,9 +134,87 @@ async function importarProductos(req, res) {
   } catch (err) {
     await conn.rollback();
     console.error(err);
-    res.status(500).json({ error: "Error en importación" });
+    res.status(500).json({ error: `Error en importación: ${err.sqlMessage || err.message}` });
   } finally {
     conn.release();
+  }
+}
+
+/**
+ * Analiza un CSV de catálogo SIN insertar nada -- mismo espíritu que el
+ * analizador de bases de leads. Sirve para detectar antes de subir:
+ * filas sin nombre, precios/comisiones no numéricos, tipos fuera de la
+ * lista fija, y qué códigos ya existen (se actualizarían) vs. cuáles
+ * son nuevos.
+ */
+async function analizarCatalogo(req, res) {
+  if (!req.file) return res.status(400).json({ error: "Adjunta un CSV" });
+
+  try {
+    const contenido = leerContenidoCsv(req.file.path);
+    fs.unlinkSync(req.file.path); // el análisis no conserva el archivo, solo lo lee
+
+    const registros = parse(contenido, { columns: true, skip_empty_lines: true, trim: true });
+
+    if (registros.length === 0) {
+      return res.status(400).json({ error: "El archivo no contiene registros" });
+    }
+
+    const codigosDelArchivo = registros.map((r) => r.codigo).filter(Boolean);
+    let codigosExistentes = new Set();
+    if (codigosDelArchivo.length > 0) {
+      const [rows] = await pool.query(
+        `SELECT codigo FROM productos WHERE codigo IN (${codigosDelArchivo.map(() => "?").join(",")})`,
+        codigosDelArchivo
+      );
+      codigosExistentes = new Set(rows.map((r) => r.codigo));
+    }
+
+    const errores = [];
+    const advertencias = [];
+    let nuevos = 0;
+    let actualizaciones = 0;
+    const codigosVistosEnArchivo = new Set();
+
+    registros.forEach((r, i) => {
+      const fila = i + 2; // +1 por índice 0, +1 por la fila de encabezado
+
+      if (!r.nombre || !r.nombre.trim()) {
+        errores.push(`Fila ${fila}: falta el nombre del producto.`);
+      }
+      if (r.precio && isNaN(parseFloat(r.precio))) {
+        errores.push(`Fila ${fila}: el precio "${r.precio}" no es un número válido.`);
+      }
+      if (r.comision && isNaN(parseFloat(r.comision))) {
+        errores.push(`Fila ${fila}: la comisión "${r.comision}" no es un número válido.`);
+      }
+      if (r.tipo && !["Producto", "Tarifa", "Servicio"].includes(r.tipo)) {
+        advertencias.push(`Fila ${fila}: tipo "${r.tipo}" no es válido, se guardará como "Producto".`);
+      }
+      if (r.codigo) {
+        if (codigosVistosEnArchivo.has(r.codigo)) {
+          advertencias.push(`Fila ${fila}: código "${r.codigo}" repetido dentro del mismo archivo -- solo quedará la última fila con ese código.`);
+        }
+        codigosVistosEnArchivo.add(r.codigo);
+
+        if (codigosExistentes.has(r.codigo)) actualizaciones++;
+        else nuevos++;
+      } else {
+        nuevos++; // sin código, siempre se inserta como producto nuevo
+      }
+    });
+
+    res.json({
+      total_filas: registros.length,
+      nuevos,
+      actualizaciones,
+      errores,
+      advertencias,
+      se_puede_subir: errores.length === 0,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: `Error al analizar el archivo: ${err.message}` });
   }
 }
 
@@ -345,12 +439,15 @@ async function marcarImagenPrincipal(req, res) {
 
 /**
  * Historial de cargas masivas de catálogo (mismo espíritu que el
- * historial de cargas de leads).
+ * historial de cargas de leads). Incluye cuántos productos siguen
+ * asociados a cada carga (productos.carga_id) para poder mostrar el
+ * botón "Deshacer" solo donde tiene sentido.
  */
 async function historialCargasProductos(req, res) {
   try {
     const [rows] = await pool.query(
-      `SELECT cp.id, cp.nombre_archivo, cp.total_registros, cp.fecha_carga, u.nombre as cargado_por
+      `SELECT cp.id, cp.nombre_archivo, cp.total_registros, cp.fecha_carga, u.nombre as cargado_por,
+              (SELECT COUNT(*) FROM productos p WHERE p.carga_id = cp.id) as productos_vigentes
        FROM cargas_productos cp
        LEFT JOIN usuarios u ON u.id = cp.cargado_por
        ORDER BY cp.fecha_carga DESC`
@@ -362,10 +459,89 @@ async function historialCargasProductos(req, res) {
   }
 }
 
+/**
+ * Previsualiza qué implica deshacer una carga de catálogo: cuántos
+ * productos siguen vigentes con ese carga_id (pueden ser menos que el
+ * total original si un producto se re-cargó después en otra carga) y
+ * cuántos de ellos ya tienen fotos subidas -- eso es lo único que se
+ * protege, porque es trabajo manual real que no está en el CSV.
+ */
+async function previsualizarDeshacerCargaCatalogo(req, res) {
+  const { id } = req.params;
+  try {
+    const [[carga]] = await pool.query("SELECT id, nombre_archivo FROM cargas_productos WHERE id = ?", [id]);
+    if (!carga) return res.status(404).json({ error: "Carga no encontrada" });
+
+    const [[conteo]] = await pool.query(
+      `SELECT
+         COUNT(*) as total_productos,
+         SUM(CASE WHEN EXISTS (SELECT 1 FROM producto_imagenes pi WHERE pi.producto_id = p.id) THEN 1 ELSE 0 END) as con_imagenes
+       FROM productos p WHERE p.carga_id = ?`,
+      [id]
+    );
+
+    res.json({
+      carga,
+      total_productos: conteo.total_productos,
+      con_imagenes: conteo.con_imagenes || 0,
+      se_puede_deshacer: Number(conteo.con_imagenes) === 0,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al previsualizar la carga" });
+  }
+}
+
+/**
+ * Elimina los productos que quedan vinculados a una carga de catálogo
+ * (y la carga misma). Se bloquea si alguno de esos productos ya tiene
+ * fotos subidas, para no perder ese trabajo manual en silencio.
+ */
+async function deshacerCargaCatalogo(req, res) {
+  const { id } = req.params;
+  const conn = await pool.getConnection();
+  try {
+    const [[carga]] = await conn.query("SELECT id FROM cargas_productos WHERE id = ?", [id]);
+    if (!carga) {
+      conn.release();
+      return res.status(404).json({ error: "Carga no encontrada" });
+    }
+
+    const [[conteo]] = await conn.query(
+      `SELECT COUNT(*) as con_imagenes
+       FROM productos p
+       WHERE p.carga_id = ? AND EXISTS (SELECT 1 FROM producto_imagenes pi WHERE pi.producto_id = p.id)`,
+      [id]
+    );
+    if (Number(conteo.con_imagenes) > 0) {
+      conn.release();
+      return res.status(400).json({
+        error: "No se puede deshacer: algunos productos de esta carga ya tienen fotos subidas.",
+      });
+    }
+
+    await conn.beginTransaction();
+    // producto_imagenes se borra en cascada por la FK, pero como ya
+    // validamos que no hay ninguna, este DELETE de productos alcanza.
+    await conn.query("DELETE FROM productos WHERE carga_id = ?", [id]);
+    await conn.query("DELETE FROM cargas_productos WHERE id = ?", [id]);
+    await conn.commit();
+
+    res.json({ success: true, mensaje: "Carga de catálogo deshecha correctamente" });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ error: "Error al deshacer la carga" });
+  } finally {
+    conn.release();
+  }
+}
+
 module.exports = {
   listarProductos,
   detalleProducto,
   importarProductos,
+  analizarCatalogo,
   listarCategorias,
   crearProducto,
   actualizarProducto,
@@ -375,4 +551,6 @@ module.exports = {
   eliminarImagenProducto,
   marcarImagenPrincipal,
   historialCargasProductos,
+  previsualizarDeshacerCargaCatalogo,
+  deshacerCargaCatalogo,
 };

@@ -3617,17 +3617,18 @@ document.getElementById("btn-descargar-plantilla-catalogo").addEventListener("cl
 });
 
 document.getElementById("archivo-catalogo-csv").addEventListener("change", (e) => {
-  const btn = document.getElementById("btn-subir-catalogo");
+  const btn = document.getElementById("btn-analizar-catalogo");
   btn.disabled = !e.target.files[0];
   btn.title = e.target.files[0] ? "" : "Selecciona un archivo primero";
   document.getElementById("catalogo-cargar-mensaje").textContent = "";
+  document.getElementById("catalogo-analisis-resultado").classList.add("oculto");
+  document.getElementById("btn-subir-catalogo").classList.add("oculto");
 });
 
-document.getElementById("btn-subir-catalogo").addEventListener("click", async () => {
+document.getElementById("btn-analizar-catalogo").addEventListener("click", async () => {
   const input = document.getElementById("archivo-catalogo-csv");
   const mensaje = document.getElementById("catalogo-cargar-mensaje");
-  const btn = document.getElementById("btn-subir-catalogo");
-
+  const btn = document.getElementById("btn-analizar-catalogo");
   mensaje.textContent = "";
   mensaje.classList.remove("error");
 
@@ -3641,19 +3642,80 @@ document.getElementById("btn-subir-catalogo").addEventListener("click", async ()
   formData.append("archivo", input.files[0]);
 
   btn.disabled = true;
+  btn.textContent = "Analizando...";
+  try {
+    const data = await apiFetch("/catalogo/analizar", { method: "POST", body: formData });
+    mostrarAnalisisCatalogo(data);
+  } catch (err) {
+    mensaje.textContent = err.message;
+    mensaje.classList.add("error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Analizar archivo";
+  }
+});
+
+function mostrarAnalisisCatalogo(data) {
+  document.getElementById("catalogo-analisis-resultado").classList.remove("oculto");
+
+  document.getElementById("catalogo-analisis-resumen").innerHTML = `
+    <p class="descripcion">
+      ${data.total_filas} filas leídas — <strong>${data.nuevos}</strong> producto(s) nuevo(s),
+      <strong>${data.actualizaciones}</strong> actualización(es) de productos existentes.
+    </p>`;
+
+  const errCont = document.getElementById("catalogo-analisis-errores");
+  errCont.innerHTML =
+    data.errores.length > 0
+      ? `<p class="mensaje error" style="white-space:pre-line;">${data.errores.join("\n")}</p>`
+      : "";
+
+  const advCont = document.getElementById("catalogo-analisis-advertencias");
+  advCont.innerHTML =
+    data.advertencias.length > 0
+      ? `<p class="descripcion" style="color:var(--gold); white-space:pre-line;">${data.advertencias.join("\n")}</p>`
+      : "";
+
+  const btnSubir = document.getElementById("btn-subir-catalogo");
+  if (data.se_puede_subir) {
+    btnSubir.classList.remove("oculto");
+  } else {
+    btnSubir.classList.add("oculto");
+  }
+}
+
+document.getElementById("btn-subir-catalogo").addEventListener("click", async () => {
+  const input = document.getElementById("archivo-catalogo-csv");
+  const mensaje = document.getElementById("catalogo-cargar-mensaje");
+  const btn = document.getElementById("btn-subir-catalogo");
+
+  mensaje.textContent = "";
+  mensaje.classList.remove("error");
+
+  if (!input.files[0]) {
+    mensaje.textContent = "El archivo ya no está seleccionado, vuelve a elegirlo.";
+    mensaje.classList.add("error");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("archivo", input.files[0]);
+
+  btn.disabled = true;
   btn.textContent = "Subiendo...";
   try {
     const data = await apiFetch("/catalogo/importar", { method: "POST", body: formData });
     mensaje.textContent = `${data.total} productos cargados/actualizados correctamente.`;
     input.value = "";
-    btn.disabled = true;
-    btn.title = "Selecciona un archivo primero";
+    document.getElementById("catalogo-analisis-resultado").classList.add("oculto");
+    document.getElementById("btn-analizar-catalogo").disabled = true;
+    document.getElementById("btn-analizar-catalogo").title = "Selecciona un archivo primero";
   } catch (err) {
     mensaje.textContent = err.message;
     mensaje.classList.add("error");
-    btn.disabled = false;
   } finally {
-    btn.textContent = "Subir catálogo";
+    btn.disabled = false;
+    btn.textContent = "Confirmar y subir catálogo";
   }
 });
 
@@ -3662,11 +3724,11 @@ document.getElementById("btn-subir-catalogo").addEventListener("click", async ()
 // ---------------------------------------------------------------------
 async function cargarHistorialCatalogo() {
   const tbody = document.getElementById("tabla-catalogo-historial");
-  tbody.innerHTML = `<tr><td colspan="4">Cargando...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="5">Cargando...</td></tr>`;
   try {
     const cargas = await apiFetch("/catalogo/cargas");
     if (cargas.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted);">Aún no se ha cargado ningún catálogo.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);">Aún no se ha cargado ningún catálogo.</td></tr>`;
       return;
     }
     tbody.innerHTML = cargas
@@ -3677,11 +3739,44 @@ async function cargarHistorialCatalogo() {
           <td>${c.nombre_archivo}</td>
           <td>${c.total_registros}</td>
           <td>${c.cargado_por || "—"}</td>
+          <td>
+            ${
+              Number(c.productos_vigentes) > 0
+                ? `<button type="button" class="btn-secundario btn-deshacer-catalogo" data-id="${c.id}">Deshacer</button>`
+                : `<span style="color:var(--text-muted); font-size:12px;">Sin productos vigentes</span>`
+            }
+          </td>
         </tr>`
       )
       .join("");
+
+    tbody.querySelectorAll(".btn-deshacer-catalogo").forEach((btn) => {
+      btn.addEventListener("click", () => confirmarDeshacerCargaCatalogo(btn.dataset.id));
+    });
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="4">Error al cargar el historial: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">Error al cargar el historial: ${err.message}</td></tr>`;
+  }
+}
+
+async function confirmarDeshacerCargaCatalogo(cargaId) {
+  try {
+    const preview = await apiFetch(`/catalogo/cargas/${cargaId}/deshacer-preview`);
+    if (!preview.se_puede_deshacer) {
+      alert(
+        `No se puede deshacer esta carga: ${preview.con_imagenes} de sus ${preview.total_productos} productos ya tienen fotos subidas.`
+      );
+      return;
+    }
+
+    const ok = confirm(
+      `Esta carga tiene ${preview.total_productos} producto(s) vigente(s) sin fotos. ¿Eliminarlos por completo? Esta acción no se puede deshacer.`
+    );
+    if (!ok) return;
+
+    await apiFetch(`/catalogo/cargas/${cargaId}`, { method: "DELETE" });
+    cargarHistorialCatalogo();
+  } catch (err) {
+    alert(err.message);
   }
 }
 

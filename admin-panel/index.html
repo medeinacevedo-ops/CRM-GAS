@@ -672,7 +672,17 @@
         <p class="descripcion" style="margin-top:4px;">La plantilla es en Excel para que sea fácil de llenar; antes de subirla, guárdala como <code>.csv</code> (Archivo → Guardar como → CSV).</p>
 
         <div class="modal-acciones" style="justify-content:flex-start;">
-          <button type="button" id="btn-subir-catalogo" disabled title="Selecciona un archivo primero">Subir catálogo</button>
+          <button type="button" id="btn-analizar-catalogo" disabled title="Selecciona un archivo primero">Analizar archivo</button>
+        </div>
+        <div id="catalogo-analisis-resultado" class="oculto">
+          <p class="seccion-titulo">Resultado del análisis</p>
+          <div id="catalogo-analisis-resumen"></div>
+          <div id="catalogo-analisis-errores"></div>
+          <div id="catalogo-analisis-advertencias"></div>
+
+          <div class="modal-acciones" style="justify-content:flex-start; margin-top:12px;">
+            <button type="button" id="btn-subir-catalogo" class="oculto">Confirmar y subir catálogo</button>
+          </div>
         </div>
         <p id="catalogo-cargar-mensaje" class="mensaje"></p>
       </section>
@@ -685,7 +695,7 @@
         </div>
         <table class="tabla">
           <thead>
-            <tr><th>Fecha</th><th>Archivo</th><th>Productos</th><th>Cargado por</th></tr>
+            <tr><th>Fecha</th><th>Archivo</th><th>Productos</th><th>Cargado por</th><th>Acciones</th></tr>
           </thead>
           <tbody id="tabla-catalogo-historial"></tbody>
         </table>
