@@ -236,27 +236,26 @@
 
         <div class="dash-visual-row">
           <div class="kpi-card dash-visual-stat">
-            <p class="kpi-label">Vendedores activos hoy</p>
+            <p class="seccion-titulo">👤 Vendedores activos hoy</p>
             <p class="kpi-valor" id="kpi-activos">—</p>
           </div>
           <div class="grafico-card dash-visual-chart">
-            <p class="seccion-titulo">Conversión del mes</p>
+            <p class="seccion-titulo">📈 Conversión del mes</p>
             <div style="position:relative; height:200px;">
               <canvas id="graficoConversion"></canvas>
             </div>
           </div>
-        </div>
-
-        <div class="grafico-card dash-visual-chart-ventas">
-          <div class="dash-visual-chart-ventas-header">
-            <p class="seccion-titulo" style="margin:0;">Ventas por día del mes</p>
-            <div class="dash-visual-chart-ventas-leyenda">
-              <span><i class="punto-leyenda" style="background:#2b7a78;"></i> Q' de ventas</span>
-              <span><i class="punto-leyenda" style="background:#c9962c;"></i> Monto S/</span>
+          <div class="grafico-card dash-visual-chart dash-visual-chart-ventas">
+            <div class="dash-visual-chart-ventas-header">
+              <p class="seccion-titulo" style="margin:0;">💰 Ventas por día del mes</p>
+              <div class="dash-visual-chart-ventas-leyenda">
+                <span><i class="punto-leyenda" style="background:#2b7a78;"></i> Q' de ventas</span>
+                <span><i class="punto-leyenda" style="background:#c9962c;"></i> Monto S/</span>
+              </div>
             </div>
-          </div>
-          <div style="position:relative; height:320px;">
-            <canvas id="graficoVentasSemana"></canvas>
+            <div style="position:relative; height:200px;">
+              <canvas id="graficoVentasSemana"></canvas>
+            </div>
           </div>
         </div>
 
@@ -267,10 +266,11 @@
           </div>
           <div class="dash-col">
             <p class="seccion-titulo">Ventas por semana</p>
-            <table class="tabla" id="tabla-ventas-semana">
-              <thead><tr><th>Semana</th><th>Monto</th></tr></thead>
-              <tbody></tbody>
-            </table>
+            <div class="grafico-card" style="margin-bottom:0;">
+              <div style="position:relative; height:220px;">
+                <canvas id="graficoVentasPorSemana"></canvas>
+              </div>
+            </div>
           </div>
         </div>
 

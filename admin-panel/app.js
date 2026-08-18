@@ -891,11 +891,7 @@ async function cargarDashboard() {
       .join("") || "<p class='descripcion'>Aún no hay leads generados en ninguna zona.</p>";
 
     // Ventas por semana
-    const tbodySemana = document.querySelector("#tabla-ventas-semana tbody");
-    tbodySemana.innerHTML =
-      data.ventas_por_semana
-        .map((s) => `<tr><td>Semana ${s.semana}</td><td>${formatoMoneda(s.monto)}</td></tr>`)
-        .join("") || `<tr><td colspan="2">Sin ventas registradas este mes</td></tr>`;
+    renderGraficoVentasPorSemana(data.ventas_por_semana);
 
     // Ranking de vendedores
     const tbodyRanking = document.getElementById("tabla-ranking");
@@ -972,6 +968,50 @@ function renderTendencia(cambio) {
 let graficoDiarioInstancia = null;
 let graficoConversionInstancia = null;
 let graficoVentasSemanaInstancia = null;
+let graficoVentasPorSemanaInstancia = null;
+
+function renderGraficoVentasPorSemana(ventasPorSemana) {
+  if (typeof Chart === "undefined") return;
+  const ctx = document.getElementById("graficoVentasPorSemana");
+  if (!ctx) return;
+
+  if (graficoVentasPorSemanaInstancia) graficoVentasPorSemanaInstancia.destroy();
+
+  const labels = ventasPorSemana.map((s) => `Semana ${s.semana}`);
+  const montos = ventasPorSemana.map((s) => Number(s.monto));
+
+  graficoVentasPorSemanaInstancia = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Ventas",
+          data: montos,
+          backgroundColor: "#c9962c",
+          borderRadius: 4,
+          barPercentage: 0.6,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (item) => formatoMoneda(item.raw) } },
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: {
+          beginAtZero: true,
+          grid: { color: "#eef1f4" },
+          ticks: { callback: (v) => formatoMoneda(v).replace(".00", "") },
+        },
+      },
+    },
+  });
+}
 
 /** Plugin de Chart.js casero: dibuja un número grande en el centro del donut. */
 const pluginTextoCentral = {
