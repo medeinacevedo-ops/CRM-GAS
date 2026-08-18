@@ -871,7 +871,6 @@ async function cargarDashboard() {
     // muestran en la fila de indicadores de arriba con su tendencia --
     // por eso no se repiten aquí. Solo se usan para pintar los gráficos.
     renderGraficoConversion(data.conversion_promedio_pct);
-    renderGraficoVentasSemana(data.ventas_por_semana);
 
     // Cobertura por zona
     const coberturaDiv = document.getElementById("cobertura-lista");
@@ -960,10 +959,10 @@ async function cargarResumenIndicadores(params) {
 /** cambio null = periodo anterior en 0, no hay porcentaje matematicamente valido. */
 function renderTendencia(cambio) {
   if (cambio === null) {
-    return `<span class="indicador-tendencia sin-dato">Sin dato del mes anterior</span>`;
+    return `<span class="indicador-tendencia sin-dato" title="Sin datos del mes anterior para comparar">— nuevo</span>`;
   }
   if (cambio === 0) {
-    return `<span class="indicador-tendencia sin-dato">Sin cambio</span>`;
+    return `<span class="indicador-tendencia sin-dato">— sin cambio</span>`;
   }
   const clase = cambio > 0 ? "subio" : "bajo";
   const flecha = cambio > 0 ? "↑" : "↓";
@@ -1028,51 +1027,118 @@ function renderGraficoConversion(conversionPct) {
   graficoConversionInstancia.update();
 }
 
-function renderGraficoVentasSemana(ventasPorSemana) {
+/** Etiquetas fijas (no solo en el hover) sobre el gráfico grande de
+ * ventas por día: el número de ventas encima de cada barra, y el monto
+ * en soles encima de cada punto de la línea. Solo se dibujan en los días
+ * que sí tuvieron ventas, para no saturar de texto los días en 0. */
+const pluginEtiquetasVentas = {
+  id: "etiquetasVentas",
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.font = "700 10px sans-serif";
+
+    chart.data.datasets.forEach((dataset, datasetIndex) => {
+      const meta = chart.getDatasetMeta(datasetIndex);
+      if (meta.hidden) return;
+
+      dataset.data.forEach((valor, i) => {
+        if (!valor) return; // no saturar los días sin ventas
+        const punto = meta.data[i];
+        if (!punto) return;
+
+        if (dataset._tipoEtiqueta === "cantidad") {
+          ctx.fillStyle = "#2b7a78";
+          ctx.fillText(String(valor), punto.x, punto.y - 6);
+        } else if (dataset._tipoEtiqueta === "monto") {
+          ctx.fillStyle = "#a3752a";
+          ctx.fillText(formatoMoneda(valor).replace(".00", ""), punto.x, punto.y - 14);
+        }
+      });
+    });
+    ctx.restore();
+  },
+};
+
+function renderGraficoVentasSemana(serieDiaria) {
   if (typeof Chart === "undefined") return;
   const ctx = document.getElementById("graficoVentasSemana");
   if (!ctx) return;
 
   if (graficoVentasSemanaInstancia) graficoVentasSemanaInstancia.destroy();
 
-  const labels = ventasPorSemana.map((s) => `Semana ${s.semana}`);
-  const montos = ventasPorSemana.map((s) => Number(s.monto));
+  const labels = serieDiaria.map((d) => `${d.dia}`);
+  const cantidades = serieDiaria.map((d) => d.ventas);
+  const montos = serieDiaria.map((d) => Number(d.monto));
+
+  const datasetCantidad = {
+    type: "bar",
+    label: "Q' de ventas",
+    data: cantidades,
+    backgroundColor: "#2b7a78",
+    borderRadius: 4,
+    barPercentage: 0.55,
+    yAxisID: "yCantidad",
+    order: 2,
+    _tipoEtiqueta: "cantidad",
+  };
+  const datasetMonto = {
+    type: "line",
+    label: "Monto S/",
+    data: montos,
+    borderColor: "#c9962c",
+    backgroundColor: "rgba(201, 150, 44, 0.18)",
+    fill: true,
+    tension: 0.3,
+    pointRadius: 3,
+    pointBackgroundColor: "#c9962c",
+    yAxisID: "yMonto",
+    order: 1,
+    _tipoEtiqueta: "monto",
+  };
 
   graficoVentasSemanaInstancia = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        {
-          label: "Ventas",
-          data: montos,
-          borderColor: "#c9962c",
-          backgroundColor: "rgba(201, 150, 44, 0.12)",
-          fill: true,
-          tension: 0.3,
-          pointRadius: 4,
-          pointBackgroundColor: "#c9962c",
-        },
-      ],
-    },
+    data: { labels, datasets: [datasetCantidad, datasetMonto] },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { top: 20 } },
+      interaction: { mode: "index", intersect: false },
       plugins: {
-        legend: { display: false },
+        legend: { display: false }, // ya hay una leyenda propia arriba del gráfico
         tooltip: {
-          callbacks: { label: (item) => formatoMoneda(item.raw) },
+          callbacks: {
+            label: (item) =>
+              item.dataset._tipoEtiqueta === "monto"
+                ? `Monto: ${formatoMoneda(item.raw)}`
+                : `Q' de ventas: ${item.raw}`,
+          },
         },
       },
       scales: {
-        x: { grid: { display: false } },
-        y: {
+        x: {
+          title: { display: true, text: "Día del mes", font: { size: 11 } },
+          grid: { display: false },
+          ticks: { maxRotation: 0, autoSkipPadding: 8 },
+        },
+        yCantidad: {
+          position: "left",
           beginAtZero: true,
+          ticks: { precision: 0 },
+          title: { display: true, text: "Q' de ventas", font: { size: 11 } },
           grid: { color: "#eef1f4" },
-          ticks: { callback: (v) => formatoMoneda(v) },
+        },
+        yMonto: {
+          position: "right",
+          beginAtZero: true,
+          title: { display: true, text: "Monto S/", font: { size: 11 } },
+          grid: { display: false },
+          ticks: { callback: (v) => formatoMoneda(v).replace(".00", "") },
         },
       },
     },
+    plugins: [pluginEtiquetasVentas],
   });
 }
 
@@ -1080,6 +1146,8 @@ async function cargarSerieDiaria(params) {
   try {
     const qs = params ? params.toString() : paramsFiltrosDashboard().toString();
     const serie = await apiFetch(`/kpis/serie-diaria?${qs}`);
+
+    renderGraficoVentasSemana(serie);
 
     const labels = serie.map((d) => d.dia);
     const visitas = serie.map((d) => d.visitas);

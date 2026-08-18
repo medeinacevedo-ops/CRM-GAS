@@ -286,7 +286,7 @@ async function serieDiariaMes(req, res) {
       [anio, mes, ...valoresBase]
     );
     const [ventasPorDia] = await pool.query(
-      `SELECT DAY(ve.fecha) AS dia, COUNT(*) AS total
+      `SELECT DAY(ve.fecha) AS dia, COUNT(*) AS total, COALESCE(SUM(ve.monto), 0) AS monto
        FROM ventas ve
        JOIN visitas v ON v.id = ve.visita_id
        JOIN leads l ON l.id = v.lead_id
@@ -298,6 +298,7 @@ async function serieDiariaMes(req, res) {
 
     const mapaVisitas = Object.fromEntries(visitasPorDia.map((v) => [v.dia, v.total]));
     const mapaVentas = Object.fromEntries(ventasPorDia.map((v) => [v.dia, v.total]));
+    const mapaMonto = Object.fromEntries(ventasPorDia.map((v) => [v.dia, v.monto]));
 
     const hoy = new Date();
     const esMesActual = anio === hoy.getFullYear() && mes === hoy.getMonth() + 1;
@@ -310,6 +311,7 @@ async function serieDiariaMes(req, res) {
         dia,
         visitas: mapaVisitas[dia] || 0,
         ventas: mapaVentas[dia] || 0,
+        monto: mapaMonto[dia] || 0,
       });
     }
 
