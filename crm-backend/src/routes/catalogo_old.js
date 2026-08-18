@@ -17,7 +17,10 @@ router.get("/productos/:id", requireAuth, controller.detalleProducto);
 
 // Rutas para Admin (Gestión)
 router.post("/importar", [requireAuth, requireRole("admin"), uploadCsv.single("archivo")], controller.importarProductos);
+router.post("/analizar", [requireAuth, requireRole("admin"), uploadCsv.single("archivo")], controller.analizarCatalogo);
 router.get("/cargas", requireAuth, requireRole("admin"), controller.historialCargasProductos);
+router.get("/cargas/:id/deshacer-preview", requireAuth, requireRole("admin"), controller.previsualizarDeshacerCargaCatalogo);
+router.delete("/cargas/:id", requireAuth, requireRole("admin"), controller.deshacerCargaCatalogo);
 
 router.post("/productos", requireAuth, requireRole("admin"), controller.crearProducto);
 router.put("/productos/:id", requireAuth, requireRole("admin"), controller.actualizarProducto);
