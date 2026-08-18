@@ -305,6 +305,22 @@ form button:hover { background: #236360; }
 .kpi-label { font-size: 12px; color: var(--text-muted); margin: 0 0 6px; }
 .kpi-valor { font-size: 22px; font-weight: 700; color: var(--navy-2); margin: 0; }
 
+.dash-visual-row {
+  display: grid;
+  grid-template-columns: 0.8fr 1fr 1.4fr;
+  gap: 14px;
+  margin-bottom: 28px;
+}
+.dash-visual-stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.dash-visual-chart { margin-bottom: 0; }
+@media (max-width: 900px) {
+  .dash-visual-row { grid-template-columns: 1fr; }
+}
+
 .dash-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;

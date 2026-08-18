@@ -234,26 +234,22 @@
           <div class="indicadores-scroll" id="indicadores-scroll"></div>
         </div>
 
-        <div class="kpi-grid">
-          <div class="kpi-card">
-            <p class="kpi-label">Ventas del mes</p>
-            <p class="kpi-valor" id="kpi-ventas-mes">—</p>
-          </div>
-          <div class="kpi-card">
-            <p class="kpi-label">Leads convertidos</p>
-            <p class="kpi-valor" id="kpi-convertidos">—</p>
-          </div>
-          <div class="kpi-card">
+        <div class="dash-visual-row">
+          <div class="kpi-card dash-visual-stat">
             <p class="kpi-label">Vendedores activos hoy</p>
             <p class="kpi-valor" id="kpi-activos">—</p>
           </div>
-          <div class="kpi-card">
-            <p class="kpi-label">Conversión promedio</p>
-            <p class="kpi-valor" id="kpi-conversion">—</p>
+          <div class="grafico-card dash-visual-chart">
+            <p class="seccion-titulo">Conversión del mes</p>
+            <div style="position:relative; height:200px;">
+              <canvas id="graficoConversion"></canvas>
+            </div>
           </div>
-          <div class="kpi-card" title="Ventas cerradas ÷ horas trabajadas por todo el equipo este mes. No cambia con el filtro de base: las horas de jornada no pertenecen a una base en particular.">
-            <p class="kpi-label">SPH del equipo ⚡</p>
-            <p class="kpi-valor" id="kpi-sph-equipo">—</p>
+          <div class="grafico-card dash-visual-chart dash-visual-chart-ancho">
+            <p class="seccion-titulo">Ventas por semana</p>
+            <div style="position:relative; height:200px;">
+              <canvas id="graficoVentasSemana"></canvas>
+            </div>
           </div>
         </div>
 

@@ -865,11 +865,13 @@ async function cargarDashboard() {
   try {
     const data = await apiFetch(`/kpis/dashboard?${params.toString()}`);
 
-    document.getElementById("kpi-ventas-mes").textContent = formatoMoneda(data.ventas_mes);
-    document.getElementById("kpi-convertidos").textContent = data.leads_convertidos_mes;
     document.getElementById("kpi-activos").textContent = `${data.vendedores_activos_hoy} / ${data.total_vendedores}`;
-    document.getElementById("kpi-conversion").textContent = `${data.conversion_promedio_pct}%`;
-    document.getElementById("kpi-sph-equipo").textContent = data.sph_equipo.toFixed(2);
+
+    // Los demás números (ventas, convertidos, conversión, SPH) ya se
+    // muestran en la fila de indicadores de arriba con su tendencia --
+    // por eso no se repiten aquí. Solo se usan para pintar los gráficos.
+    renderGraficoConversion(data.conversion_promedio_pct);
+    renderGraficoVentasSemana(data.ventas_por_semana);
 
     // Cobertura por zona
     const coberturaDiv = document.getElementById("cobertura-lista");
@@ -969,6 +971,110 @@ function renderTendencia(cambio) {
 }
 
 let graficoDiarioInstancia = null;
+let graficoConversionInstancia = null;
+let graficoVentasSemanaInstancia = null;
+
+/** Plugin de Chart.js casero: dibuja un número grande en el centro del donut. */
+const pluginTextoCentral = {
+  id: "textoCentral",
+  afterDraw(chart) {
+    if (chart.config._textoCentral === undefined) return;
+    const { ctx, chartArea } = chart;
+    const x = (chartArea.left + chartArea.right) / 2;
+    const y = (chartArea.top + chartArea.bottom) / 2;
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "700 26px sans-serif";
+    ctx.fillStyle = "#1a3a5c";
+    ctx.fillText(chart.config._textoCentral, x, y);
+    ctx.restore();
+  },
+};
+
+function renderGraficoConversion(conversionPct) {
+  if (typeof Chart === "undefined") return;
+  const ctx = document.getElementById("graficoConversion");
+  if (!ctx) return;
+
+  if (graficoConversionInstancia) graficoConversionInstancia.destroy();
+
+  graficoConversionInstancia = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: ["Convertido", "No convertido"],
+      datasets: [
+        {
+          data: [conversionPct, Math.max(0, 100 - conversionPct)],
+          backgroundColor: ["#2b7a78", "#e6ebef"],
+          borderWidth: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: "72%",
+      plugins: {
+        legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } },
+        tooltip: {
+          callbacks: { label: (item) => `${item.label}: ${item.raw}%` },
+        },
+      },
+    },
+    plugins: [pluginTextoCentral],
+  });
+  graficoConversionInstancia.config._textoCentral = `${conversionPct}%`;
+  graficoConversionInstancia.update();
+}
+
+function renderGraficoVentasSemana(ventasPorSemana) {
+  if (typeof Chart === "undefined") return;
+  const ctx = document.getElementById("graficoVentasSemana");
+  if (!ctx) return;
+
+  if (graficoVentasSemanaInstancia) graficoVentasSemanaInstancia.destroy();
+
+  const labels = ventasPorSemana.map((s) => `Semana ${s.semana}`);
+  const montos = ventasPorSemana.map((s) => Number(s.monto));
+
+  graficoVentasSemanaInstancia = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Ventas",
+          data: montos,
+          borderColor: "#c9962c",
+          backgroundColor: "rgba(201, 150, 44, 0.12)",
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: "#c9962c",
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: { label: (item) => formatoMoneda(item.raw) },
+        },
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: {
+          beginAtZero: true,
+          grid: { color: "#eef1f4" },
+          ticks: { callback: (v) => formatoMoneda(v) },
+        },
+      },
+    },
+  });
+}
 
 async function cargarSerieDiaria(params) {
   try {
