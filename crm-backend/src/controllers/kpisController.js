@@ -62,6 +62,7 @@ async function kpisVendedor(req, res) {
       `SELECT
          COUNT(*) AS visitados,
          SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS ventas,
+         SUM(CASE WHEN v.resultado = 'no_interesado' THEN 1 ELSE 0 END) AS descartados,
          COALESCE(SUM(ve.monto), 0) AS monto,
          COALESCE(SUM(ve.comision), 0) AS comisiones
        FROM visitas v
@@ -80,6 +81,7 @@ async function kpisVendedor(req, res) {
       `SELECT
          COUNT(*) AS visitados,
          SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS ventas,
+         SUM(CASE WHEN v.resultado = 'no_interesado' THEN 1 ELSE 0 END) AS descartados,
          COALESCE(SUM(ve.monto), 0) AS monto,
          COALESCE(SUM(ve.comision), 0) AS comisiones
        FROM visitas v
@@ -97,6 +99,7 @@ async function kpisVendedor(req, res) {
         visitados: hoy.visitados,
         pendientes: asignadosHoy.total,
         ventas: hoy.ventas || 0,
+        descartados: hoy.descartados || 0,
         monto: hoy.monto,
         comisiones: hoy.comisiones,
         conversion_pct: conversionHoy,
@@ -104,6 +107,7 @@ async function kpisVendedor(req, res) {
       mes: {
         visitados: mes.visitados,
         ventas: mes.ventas || 0,
+        descartados: mes.descartados || 0,
         monto: mes.monto,
         comisiones: mes.comisiones,
         meta_ventas: META_VENTAS_MES,
