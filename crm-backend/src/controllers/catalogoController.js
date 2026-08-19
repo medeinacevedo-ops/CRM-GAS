@@ -49,18 +49,24 @@ async function listarProductos(req, res) {
 async function detalleProducto(req, res) {
   const { id } = req.params;
   try {
+    console.log(`[Catalogo] Obteniendo detalle para producto ID: ${id}`);
     const [[producto]] = await pool.query("SELECT * FROM productos WHERE id = ?", [id]);
-    if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
+
+    if (!producto) {
+      console.warn(`[Catalogo] Producto ID ${id} no encontrado`);
+      return res.status(404).json({ error: "Producto no encontrado" });
+    }
 
     const [imagenes] = await pool.query(
       "SELECT id, url, es_principal FROM producto_imagenes WHERE producto_id = ? ORDER BY es_principal DESC, orden ASC",
       [id]
     );
 
+    console.log(`[Catalogo] Detalle cargado con éxito para ${producto.nombre} (${imagenes.length} imágenes)`);
     res.json({ ...producto, imagenes });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Error al obtener detalle del producto" });
+    console.error(`[Catalogo Error] detalleProducto para ID ${id}:`, err);
+    res.status(500).json({ error: "Error interno al obtener detalle del producto" });
   }
 }
 
