@@ -3394,6 +3394,9 @@ document.getElementById("form-jornada").addEventListener("submit", async (e) => 
 // ---------------------------------------------------------------------
 let conteoNotificacionesNoLeidas = 0;
 let socketNotificaciones = null;
+let conteoSosPendientes = 0;
+let audioCtxSos = null;
+let sosAlertaActualId = null;
 
 // El backend sirve la API en /api sobre este mismo host:puerto -- el socket
 // se conecta directo a la raiz (sin /api), que es donde Socket.IO escucha.
@@ -4036,9 +4039,10 @@ document.getElementById("btn-refrescar-catalogo-historial").addEventListener("cl
 // ---------------------------------------------------------------------
 // ALERTAS SOS
 // ---------------------------------------------------------------------
-let conteoSosPendientes = 0;
-let audioCtxSos = null;
-let sosAlertaActualId = null;
+// (conteoSosPendientes, audioCtxSos y sosAlertaActualId ya están
+// declaradas arriba, junto al resto de variables globales de sockets --
+// deben declararse ANTES de mostrarApp(), que puede ejecutarse de
+// inmediato si ya había una sesión guardada al cargar la página)
 
 /** Beep de alarma generado con Web Audio API -- no depende de ningún
  * archivo de sonido externo que se pueda perder o no cargar. */
