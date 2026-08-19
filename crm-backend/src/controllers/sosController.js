@@ -66,4 +66,26 @@ async function listarAlertasSos(req, res) {
   }
 }
 
-module.exports = { enviarAlertaSos, listarAlertasSos };
+/**
+ * Marca una alerta SOS como atendida, dejando registrado quién y cuándo
+ * la resolvió (con nota opcional de qué se hizo al respecto).
+ */
+async function marcarSosAtendida(req, res) {
+  const { id } = req.params;
+  const { notas } = req.body;
+  const adminId = req.usuario.id;
+
+  try {
+    const [result] = await pool.query(
+      "UPDATE alertas_sos SET atendida = 1, atendida_por = ?, notas_resolucion = ? WHERE id = ?",
+      [adminId, notas || null, id]
+    );
+    if (result.affectedRows === 0) return res.status(404).json({ error: "Alerta no encontrada" });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al marcar la alerta como atendida" });
+  }
+}
+
+module.exports = { enviarAlertaSos, listarAlertasSos, marcarSosAtendida };

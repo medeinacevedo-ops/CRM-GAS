@@ -52,6 +52,22 @@
     <!-- Contenedor de toasts tipo Messenger, abajo a la derecha -->
     <div id="notif-toast-contenedor" class="notif-toast-contenedor"></div>
 
+    <!-- Alerta SOS a pantalla completa: no se cierra sola ni al hacer clic
+         afuera -- el admin tiene que decidir qué hacer, a propósito. -->
+    <div id="modal-sos-alerta" class="modal-sos oculto">
+      <div class="modal-sos-card">
+        <div class="modal-sos-icono">⚠️</div>
+        <p class="modal-sos-titulo">¡ALERTA SOS!</p>
+        <p class="modal-sos-vendedor" id="sos-alerta-vendedor">—</p>
+        <p class="modal-sos-detalle" id="sos-alerta-hora">—</p>
+        <div class="modal-sos-acciones">
+          <a id="sos-alerta-mapa-link" href="#" target="_blank" rel="noopener" class="btn-sos-mapa">📍 Ver ubicación en el mapa</a>
+          <button id="btn-sos-alerta-atender" class="btn-sos-atender">Marcar como atendida</button>
+          <button id="btn-sos-alerta-cerrar" class="btn-sos-cerrar">Cerrar (seguir pendiente)</button>
+        </div>
+      </div>
+    </div>
+
 
     <aside class="sidebar">
       <p class="marca-logo-wrap"><img src="logo-a3pulse.png" alt="A3 Pulse"></p>
@@ -59,6 +75,12 @@
         <button class="nav-item nav-item-top activo" data-vista="dashboard">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
           <span>Dashboard</span>
+        </button>
+
+        <button class="nav-item nav-item-top nav-item-sos" data-vista="sos">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span>Alertas SOS</span>
+          <span id="sos-badge" class="sos-badge oculto">0</span>
         </button>
 
         <div class="nav-grupo" data-grupo="base">
@@ -285,6 +307,24 @@
         <table class="tabla">
           <thead><tr><th>#</th><th>Vendedor</th><th>Zona</th><th>Ventas</th><th>Conversión</th><th title="Ventas cerradas ÷ horas trabajadas en el mes">SPH ⚡</th></tr></thead>
           <tbody id="tabla-ranking"></tbody>
+        </table>
+      </section>
+
+      <!-- Alertas SOS -->
+      <section id="panel-sos" class="panel oculto">
+        <div class="panel-header">
+          <h2>Alertas SOS</h2>
+          <button id="btn-refrescar-sos" class="btn-secundario">Actualizar</button>
+        </div>
+        <p class="descripcion">
+          Botón de pánico activado por un vendedor desde la app. Cada alerta llega en tiempo real
+          con la ubicación GPS exacta -- márcala como atendida una vez que confirmes que el vendedor está bien.
+        </p>
+        <table class="tabla">
+          <thead>
+            <tr><th>Fecha</th><th>Vendedor</th><th>Zona</th><th>Ubicación</th><th>Estado</th><th>Acciones</th></tr>
+          </thead>
+          <tbody id="tabla-sos"></tbody>
         </table>
       </section>
 

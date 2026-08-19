@@ -85,7 +85,31 @@ function mostrarApp() {
   cargarHistorial();
   cargarDashboard();
   iniciarSocketNotificaciones();
+  inicializarAudioSos();
 }
+
+/** Crea el AudioContext de la alarma SOS apenas se puede (login es una
+ * interacción real del usuario, así el navegador no bloquea el sonido
+ * cuando después llegue una alerta de verdad). Si la sesión ya estaba
+ * guardada y mostrarApp() se dispara sin click de por medio, el contexto
+ * queda "suspendido" -- por eso también se intenta reanudar en el primer
+ * click o tecla que el admin haga en cualquier parte de la página. */
+function inicializarAudioSos() {
+  if (audioCtxSos) return;
+  try {
+    audioCtxSos = new (window.AudioContext || window.webkitAudioContext)();
+  } catch (err) {
+    console.error("No se pudo inicializar el audio de alerta SOS:", err.message);
+  }
+}
+
+document.addEventListener(
+  "click",
+  () => {
+    if (audioCtxSos && audioCtxSos.state === "suspended") audioCtxSos.resume();
+  },
+  { once: false }
+);
 
 // (la conexion automatica si ya habia sesion guardada se dispara al final
 // del archivo, despues de que todos los listeners de la UI ya se registraron
@@ -115,6 +139,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.vista === "operativos") inicializarPantallaOperativos();
     if (btn.dataset.vista === "reparto") inicializarPantallaReparto();
     if (btn.dataset.vista === "dashboard") cargarDashboard();
+    if (btn.dataset.vista === "sos") cargarPantallaSos();
     if (btn.dataset.vista === "usuarios") cargarUsuarios();
     if (btn.dataset.vista === "pausas") cargarPausas();
     if (btn.dataset.vista === "intercambios") cargarIntercambios();
@@ -3378,6 +3403,7 @@ function iniciarSocketNotificaciones() {
   if (socketNotificaciones) return; // evita conexiones duplicadas
 
   cargarConteoInicialNotificaciones();
+  cargarConteoInicialSos();
 
   try {
     if (typeof io === "undefined") {
@@ -3403,6 +3429,17 @@ function iniciarSocketNotificaciones() {
       conteoNotificacionesNoLeidas++;
       actualizarBadgeNotificaciones(conteoNotificacionesNoLeidas);
       mostrarToastNotificacion(data);
+    });
+
+    socketNotificaciones.on("alerta_sos", (data) => {
+      conteoSosPendientes++;
+      actualizarBadgeSos(conteoSosPendientes);
+      sonarAlertaSos();
+      mostrarModalSos(data);
+      // Si la pantalla de Alertas SOS está abierta, refresca la tabla al toque
+      if (!document.getElementById("panel-sos").classList.contains("oculto")) {
+        cargarPantallaSos();
+      }
     });
 
     socketNotificaciones.on("disconnect", () => {
@@ -3995,3 +4032,135 @@ async function confirmarDeshacerCargaCatalogo(cargaId) {
 }
 
 document.getElementById("btn-refrescar-catalogo-historial").addEventListener("click", cargarHistorialCatalogo);
+
+// ---------------------------------------------------------------------
+// ALERTAS SOS
+// ---------------------------------------------------------------------
+let conteoSosPendientes = 0;
+let audioCtxSos = null;
+let sosAlertaActualId = null;
+
+/** Beep de alarma generado con Web Audio API -- no depende de ningún
+ * archivo de sonido externo que se pueda perder o no cargar. */
+function sonarAlertaSos() {
+  try {
+    if (!audioCtxSos) audioCtxSos = new (window.AudioContext || window.webkitAudioContext)();
+    const ahora = audioCtxSos.currentTime;
+    // Dos tonos alternados tipo sirena, 3 repeticiones
+    for (let i = 0; i < 3; i++) {
+      const osc = audioCtxSos.createOscillator();
+      const gain = audioCtxSos.createGain();
+      osc.type = "square";
+      osc.connect(gain);
+      gain.connect(audioCtxSos.destination);
+      const inicio = ahora + i * 0.6;
+      gain.gain.setValueAtTime(0.15, inicio);
+      osc.frequency.setValueAtTime(880, inicio);
+      osc.frequency.setValueAtTime(660, inicio + 0.3);
+      osc.start(inicio);
+      osc.stop(inicio + 0.6);
+    }
+  } catch (err) {
+    console.error("No se pudo reproducir el sonido de alerta SOS:", err.message);
+  }
+}
+
+function actualizarBadgeSos(total) {
+  const badge = document.getElementById("sos-badge");
+  if (total > 0) {
+    badge.textContent = total > 99 ? "99+" : total;
+    badge.classList.remove("oculto");
+  } else {
+    badge.classList.add("oculto");
+  }
+}
+
+async function cargarConteoInicialSos() {
+  try {
+    const alertas = await apiFetch("/sos/lista");
+    conteoSosPendientes = alertas.filter((a) => !a.atendida).length;
+    actualizarBadgeSos(conteoSosPendientes);
+  } catch (err) {
+    console.error("Error al cargar el conteo de alertas SOS:", err.message);
+  }
+}
+
+function mostrarModalSos(data) {
+  sosAlertaActualId = data.id;
+  document.getElementById("sos-alerta-vendedor").textContent = data.vendedor;
+  document.getElementById("sos-alerta-hora").textContent = new Date(data.fecha).toLocaleString("es-PE");
+  document.getElementById("sos-alerta-mapa-link").href = `https://www.google.com/maps?q=${data.lat},${data.lng}`;
+  document.getElementById("modal-sos-alerta").classList.remove("oculto");
+}
+
+document.getElementById("btn-sos-alerta-cerrar").addEventListener("click", () => {
+  document.getElementById("modal-sos-alerta").classList.add("oculto");
+});
+
+document.getElementById("btn-sos-alerta-atender").addEventListener("click", async () => {
+  if (!sosAlertaActualId) return;
+  await marcarSosAtendidaConfirmar(sosAlertaActualId);
+  document.getElementById("modal-sos-alerta").classList.add("oculto");
+});
+
+async function cargarPantallaSos() {
+  const tbody = document.getElementById("tabla-sos");
+  tbody.innerHTML = `<tr><td colspan="6">Cargando...</td></tr>`;
+  try {
+    const alertas = await apiFetch("/sos/lista");
+
+    if (alertas.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-muted);">No hay alertas SOS registradas.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = alertas
+      .map(
+        (a) => `
+        <tr>
+          <td>${new Date(a.fecha).toLocaleString("es-PE")}</td>
+          <td>${a.vendedor}</td>
+          <td>${a.zona || "—"}</td>
+          <td><a href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" rel="noopener">📍 Ver en mapa</a></td>
+          <td><span class="badge-sos-estado ${a.atendida ? "atendida" : "pendiente"}">${a.atendida ? "Atendida" : "Pendiente"}</span></td>
+          <td>
+            ${
+              a.atendida
+                ? "—"
+                : `<button class="btn-secundario" data-accion="atender-sos" data-id="${a.id}">Marcar atendida</button>`
+            }
+          </td>
+        </tr>`
+      )
+      .join("");
+
+    tbody.querySelectorAll("[data-accion='atender-sos']").forEach((btn) => {
+      btn.addEventListener("click", () => marcarSosAtendidaConfirmar(btn.dataset.id));
+    });
+
+    // El conteo del badge debe reflejar exactamente lo que hay en la tabla
+    conteoSosPendientes = alertas.filter((a) => !a.atendida).length;
+    actualizarBadgeSos(conteoSosPendientes);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6">Error al cargar las alertas: ${err.message}</td></tr>`;
+  }
+}
+
+async function marcarSosAtendidaConfirmar(id) {
+  const notas = prompt("¿Alguna nota sobre cómo se resolvió? (opcional, deja vacío para omitir)");
+  if (notas === null) return; // canceló el prompt
+
+  try {
+    await apiFetch(`/sos/${id}/atender`, { method: "PATCH", body: JSON.stringify({ notas }) });
+    if (!document.getElementById("panel-sos").classList.contains("oculto")) {
+      cargarPantallaSos();
+    } else {
+      conteoSosPendientes = Math.max(0, conteoSosPendientes - 1);
+      actualizarBadgeSos(conteoSosPendientes);
+    }
+  } catch (err) {
+    alert(`Error al marcar la alerta como atendida: ${err.message}`);
+  }
+}
+
+document.getElementById("btn-refrescar-sos").addEventListener("click", cargarPantallaSos);
