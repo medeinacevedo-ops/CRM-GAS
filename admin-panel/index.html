@@ -256,10 +256,55 @@
           <div class="indicadores-scroll" id="indicadores-scroll"></div>
         </div>
 
+        <!-- EMBUDO DE CONVERSIÓN -->
+        <div class="seccion-header">
+          <span class="seccion-header-icono">🎯</span>
+          <h3>Embudo de conversión <span class="seccion-header-sub">Leads → Cobertura → Contactabilidad → Efectividad</span></h3>
+        </div>
+        <div class="grafico-card">
+          <div style="position:relative; height:190px;">
+            <canvas id="graficoEmbudo"></canvas>
+          </div>
+        </div>
+
+        <!-- DIAGNÓSTICO OUTBOUND -->
+        <div class="seccion-header">
+          <span class="seccion-header-icono">🔍</span>
+          <h3>Diagnóstico outbound</h3>
+        </div>
+        <div class="dash-cols">
+          <div class="dash-col grafico-card" style="margin-bottom:0;">
+            <p class="seccion-titulo">Motivos de no-venta</p>
+            <div style="position:relative; height:210px;">
+              <canvas id="graficoMotivos"></canvas>
+            </div>
+          </div>
+          <div class="dash-col kpi-card" id="card-leads-frios">
+            <p class="seccion-titulo">🥶 Leads fríos</p>
+            <p class="kpi-valor" id="kpi-leads-frios">—</p>
+            <p class="descripcion">Sin ninguna visita en los últimos 15 días y todavía activos -- se están enfriando.</p>
+          </div>
+        </div>
+
+        <!-- VENTAS Y DESEMPEÑO DEL MES -->
+        <div class="seccion-header">
+          <span class="seccion-header-icono">💰</span>
+          <h3>Ventas y desempeño del mes</h3>
+        </div>
         <div class="dash-visual-row">
           <div class="kpi-card dash-visual-stat">
-            <p class="seccion-titulo">👤 Vendedores activos hoy</p>
-            <p class="kpi-valor" id="kpi-activos">—</p>
+            <div class="dash-visual-stat-doble">
+              <div>
+                <p class="kpi-label">👤 Vendedores activos hoy</p>
+                <p class="kpi-valor" id="kpi-activos">—</p>
+              </div>
+              <div class="dash-visual-stat-divisor"></div>
+              <div>
+                <p class="kpi-label">🎟️ Ticket promedio</p>
+                <p class="kpi-valor" id="kpi-ticket-promedio">—</p>
+                <p class="indicador-tendencia" id="kpi-ticket-tendencia"></p>
+              </div>
+            </div>
           </div>
           <div class="grafico-card dash-visual-chart">
             <p class="seccion-titulo">📈 Conversión del mes</p>
@@ -269,8 +314,8 @@
           </div>
           <div class="grafico-card dash-visual-chart dash-visual-chart-ventas">
             <div class="dash-visual-chart-ventas-header">
-              <p class="seccion-titulo" style="margin:0;">💰 Ventas por día del mes</p>
-              <div class="dash-visual-chart-ventas-leyenda">
+              <p class="seccion-titulo" style="margin:0;">Ventas por día del mes</p>
+              <div class="leyenda-chart">
                 <span><i class="punto-leyenda" style="background:#2b7a78;"></i> Q' de ventas</span>
                 <span><i class="punto-leyenda" style="background:#c9962c;"></i> Monto S/</span>
               </div>
@@ -281,11 +326,29 @@
           </div>
         </div>
 
+        <!-- DESEMPEÑO POR ZONA -->
+        <div class="seccion-header">
+          <span class="seccion-header-icono">🗺️</span>
+          <h3>Desempeño por zona</h3>
+        </div>
         <div class="dash-cols">
           <div class="dash-col">
             <p class="seccion-titulo">Cobertura por zona</p>
             <div id="cobertura-lista"></div>
           </div>
+          <div class="dash-col grafico-card" style="margin-bottom:0;">
+            <p class="seccion-titulo" style="margin-bottom:2px;">Efectividad y ventas por zona</p>
+            <div class="leyenda-chart" style="margin-bottom:6px;">
+              <span><i class="punto-leyenda" style="background:#c9962c;"></i> Monto S/</span>
+              <span><i class="punto-leyenda" style="background:#2b7a78;"></i> Efectividad %</span>
+            </div>
+            <div style="position:relative; height:220px;">
+              <canvas id="graficoZonas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-cols">
           <div class="dash-col">
             <p class="seccion-titulo">Ventas por semana</p>
             <div class="grafico-card" style="margin-bottom:0;">
@@ -294,16 +357,32 @@
               </div>
             </div>
           </div>
-        </div>
-
-        <p class="seccion-titulo" style="margin-top:24px;">Visitas y ventas por día del mes</p>
-        <div class="grafico-card">
-          <div style="position:relative; height:280px;">
-            <canvas id="graficoDiario"></canvas>
+          <div class="dash-col">
+            <p class="seccion-titulo">Visitas y ventas por día del mes</p>
+            <div class="grafico-card" style="margin-bottom:0;">
+              <div style="position:relative; height:220px;">
+                <canvas id="graficoDiario"></canvas>
+              </div>
+            </div>
           </div>
         </div>
 
-        <p class="seccion-titulo" style="margin-top:24px;">Ranking de vendedores</p>
+        <!-- CATÁLOGO -->
+        <div class="seccion-header">
+          <span class="seccion-header-icono">📦</span>
+          <h3>Mix de productos vendidos</h3>
+        </div>
+        <div class="grafico-card">
+          <div style="position:relative; height:240px;">
+            <canvas id="graficoProductos"></canvas>
+          </div>
+        </div>
+
+        <!-- EQUIPO -->
+        <div class="seccion-header">
+          <span class="seccion-header-icono">👥</span>
+          <h3>Ranking de vendedores</h3>
+        </div>
         <table class="tabla">
           <thead><tr><th>#</th><th>Vendedor</th><th>Zona</th><th>Ventas</th><th>Conversión</th><th title="Ventas cerradas ÷ horas trabajadas en el mes">SPH ⚡</th></tr></thead>
           <tbody id="tabla-ranking"></tbody>

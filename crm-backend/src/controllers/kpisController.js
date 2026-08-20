@@ -62,7 +62,6 @@ async function kpisVendedor(req, res) {
       `SELECT
          COUNT(*) AS visitados,
          SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS ventas,
-         SUM(CASE WHEN v.resultado = 'no_interesado' THEN 1 ELSE 0 END) AS descartados,
          COALESCE(SUM(ve.monto), 0) AS monto,
          COALESCE(SUM(ve.comision), 0) AS comisiones
        FROM visitas v
@@ -81,7 +80,6 @@ async function kpisVendedor(req, res) {
       `SELECT
          COUNT(*) AS visitados,
          SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN 1 ELSE 0 END) AS ventas,
-         SUM(CASE WHEN v.resultado = 'no_interesado' THEN 1 ELSE 0 END) AS descartados,
          COALESCE(SUM(ve.monto), 0) AS monto,
          COALESCE(SUM(ve.comision), 0) AS comisiones
        FROM visitas v
@@ -99,7 +97,6 @@ async function kpisVendedor(req, res) {
         visitados: hoy.visitados,
         pendientes: asignadosHoy.total,
         ventas: hoy.ventas || 0,
-        descartados: hoy.descartados || 0,
         monto: hoy.monto,
         comisiones: hoy.comisiones,
         conversion_pct: conversionHoy,
@@ -107,7 +104,6 @@ async function kpisVendedor(req, res) {
       mes: {
         visitados: mes.visitados,
         ventas: mes.ventas || 0,
-        descartados: mes.descartados || 0,
         monto: mes.monto,
         comisiones: mes.comisiones,
         meta_ventas: META_VENTAS_MES,
@@ -582,4 +578,120 @@ async function kpisBase(req, res) {
   }
 }
 
-module.exports = { kpisVendedor, dashboardAdmin, serieDiariaMes, dashboardSupervisor, rankingVendedores, kpisBase, resumenIndicadores };
+module.exports = { kpisVendedor, dashboardAdmin, serieDiariaMes, dashboardSupervisor, rankingVendedores, kpisBase, resumenIndicadores, analisisOutbound };
+
+/**
+ * Paquete de métricas de análisis outbound para el dashboard:
+ *  - motivos_no_venta: de las visitas que NO cerraron venta, cómo se
+ *    reparten entre no_interesado / reagendar / no_ubicado -- para saber
+ *    si el problema es de interés, de timing, o de no encontrar al cliente.
+ *  - leads_frios: leads de la base filtrada que llevan más de 15 días sin
+ *    ninguna visita y todavía no se descartaron ni vendieron -- se están
+ *    enfriando sin que nadie lo note.
+ *  - zona_performance: ventas y efectividad por zona, para comparar.
+ *  - ticket_promedio: monto promedio por venta este mes vs el anterior.
+ *  - producto_mix: top productos vendidos por monto (campo libre de
+ *    ventas.producto, normalmente viene del catálogo pero es texto).
+ */
+async function analisisOutbound(req, res) {
+  try {
+    const { anio, mes } = resolverMes(req.query.mes);
+    const baseIds = parsearBaseIds(req.query.base_ids);
+    const filtroBase = baseIds ? `AND lb.carga_id IN (${baseIds.map(() => "?").join(",")})` : "";
+    const valoresBase = baseIds || [];
+
+    // Motivos de no-venta
+    const [motivos] = await pool.query(
+      `SELECT v.resultado, COUNT(*) AS total
+       FROM visitas v
+       JOIN leads l ON l.id = v.lead_id
+       JOIN leads_base lb ON lb.id = l.lead_base_id
+       WHERE YEAR(v.fecha) = ? AND MONTH(v.fecha) = ? AND v.resultado != 'venta_cerrada' ${filtroBase}
+       GROUP BY v.resultado`,
+      [anio, mes, ...valoresBase]
+    );
+    const etiquetasMotivo = { no_interesado: "No interesado", reagendar: "Reagendar", no_ubicado: "No ubicado" };
+    const motivos_no_venta = motivos.map((m) => ({
+      motivo: etiquetasMotivo[m.resultado] || m.resultado,
+      total: m.total,
+    }));
+
+    // Leads fríos: sin ninguna visita en los últimos 15 días, y sin venta
+    const [[frios]] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM leads l
+       JOIN leads_base lb ON lb.id = l.lead_base_id
+       WHERE l.estado NOT IN ('vendido', 'descartado') ${filtroBase}
+         AND NOT EXISTS (
+           SELECT 1 FROM visitas v WHERE v.lead_id = l.id AND v.fecha >= DATE_SUB(NOW(), INTERVAL 15 DAY)
+         )`,
+      valoresBase
+    );
+
+    // Efectividad y ventas por zona
+    const [zonas] = await pool.query(
+      `SELECT z.nombre AS zona,
+              COUNT(DISTINCT CASE WHEN v.resultado != 'no_ubicado' THEN v.id END) AS contactos,
+              COUNT(DISTINCT CASE WHEN v.resultado = 'venta_cerrada' THEN v.id END) AS ventas_cant,
+              COALESCE(SUM(CASE WHEN v.resultado = 'venta_cerrada' THEN ve.monto ELSE 0 END), 0) AS ventas_monto
+       FROM zonas z
+       JOIN leads l ON l.zona_id = z.id
+       JOIN leads_base lb ON lb.id = l.lead_base_id
+       LEFT JOIN visitas v ON v.lead_id = l.id AND YEAR(v.fecha) = ? AND MONTH(v.fecha) = ?
+       LEFT JOIN ventas ve ON ve.visita_id = v.id
+       WHERE 1=1 ${filtroBase}
+       GROUP BY z.id
+       HAVING contactos > 0 OR ventas_monto > 0
+       ORDER BY ventas_monto DESC`,
+      [anio, mes, ...valoresBase]
+    );
+    const zona_performance = zonas.map((z) => ({
+      zona: z.zona,
+      ventas_monto: Number(z.ventas_monto),
+      efectividad_pct: z.contactos > 0 ? Math.round((z.ventas_cant / z.contactos) * 100) : 0,
+    }));
+
+    // Ticket promedio (este mes vs mes anterior)
+    async function ticketDe({ anio, mes }) {
+      const [[t]] = await pool.query(
+        `SELECT COALESCE(AVG(ve.monto), 0) AS promedio
+         FROM ventas ve
+         JOIN visitas v ON v.id = ve.visita_id
+         JOIN leads l ON l.id = v.lead_id
+         JOIN leads_base lb ON lb.id = l.lead_base_id
+         WHERE YEAR(ve.fecha) = ? AND MONTH(ve.fecha) = ? ${filtroBase}`,
+        [anio, mes, ...valoresBase]
+      );
+      return Number(t.promedio);
+    }
+    const ticket_promedio = await ticketDe({ anio, mes });
+    const ticket_promedio_anterior = await ticketDe(mesAnterior({ anio, mes }));
+
+    // Mix de productos (top 8 por monto)
+    const [productos] = await pool.query(
+      `SELECT ve.producto, SUM(ve.monto) AS monto, COUNT(*) AS cantidad
+       FROM ventas ve
+       JOIN visitas v ON v.id = ve.visita_id
+       JOIN leads l ON l.id = v.lead_id
+       JOIN leads_base lb ON lb.id = l.lead_base_id
+       WHERE YEAR(ve.fecha) = ? AND MONTH(ve.fecha) = ? ${filtroBase}
+       GROUP BY ve.producto
+       ORDER BY monto DESC
+       LIMIT 8`,
+      [anio, mes, ...valoresBase]
+    );
+    const producto_mix = productos.map((p) => ({ producto: p.producto, monto: Number(p.monto), cantidad: p.cantidad }));
+
+    res.json({
+      motivos_no_venta,
+      leads_frios: frios.total,
+      zona_performance,
+      ticket_promedio,
+      ticket_promedio_cambio: calcularCambioPct(ticket_promedio, ticket_promedio_anterior),
+      producto_mix,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al calcular el análisis outbound" });
+  }
+}

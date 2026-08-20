@@ -343,6 +343,61 @@ form button:hover { background: #236360; }
   margin-right: 4px;
 }
 
+/* ---------- ENCABEZADOS DE SECCIÓN (estilo corporativo) ---------- */
+.seccion-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 30px 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border);
+}
+.seccion-header:first-of-type { margin-top: 0; }
+.seccion-header-icono {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--navy-2);
+  color: white;
+  border-radius: 8px;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.seccion-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy-2);
+  letter-spacing: 0.2px;
+}
+.seccion-header-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.dash-visual-stat-doble { display: flex; flex-direction: column; gap: 14px; justify-content: center; height: 100%; }
+.dash-visual-stat-doble .kpi-label { margin-bottom: 2px; }
+.dash-visual-stat-doble .kpi-valor { font-size: 22px; }
+.dash-visual-stat-divisor { border-top: 1px solid var(--border); }
+
+.kpi-card-alerta {
+  border: 1.5px solid var(--coral);
+  background: #fdf6f5;
+}
+.kpi-card-alerta .kpi-valor { color: var(--coral); }
+
+.leyenda-chart {
+  display: flex;
+  gap: 16px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
 .dash-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;

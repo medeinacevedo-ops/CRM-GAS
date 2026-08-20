@@ -940,6 +940,7 @@ async function cargarDashboard() {
 
   cargarResumenIndicadores(params);
   cargarSerieDiaria(params);
+  cargarAnalisisOutbound(params);
 }
 
 document.getElementById("btn-refrescar-dashboard").addEventListener("click", cargarDashboard);
@@ -960,7 +961,7 @@ async function cargarResumenIndicadores(params) {
       { icono: "💬", etiqueta: "Contactos", valor: actual.contactos_total, cambio: cambios.contactos_total },
       { icono: "🧾", etiqueta: "Pedidos", valor: actual.pedidos_total, cambio: cambios.pedidos_total },
       { icono: "💰", etiqueta: "Ventas", valor: formatoMoneda(actual.ventas_monto), cambio: cambios.ventas_monto },
-      { icono: "📈", etiqueta: "Conversión", valor: `${actual.conversion_pct}%`, cambio: cambios.conversion_pct },
+      { icono: "📈", etiqueta: "Efectividad", valor: `${actual.conversion_pct}%`, cambio: cambios.conversion_pct },
       { icono: "⚡", etiqueta: "SPH", valor: actual.sph.toFixed(2), cambio: cambios.sph },
     ];
 
@@ -971,6 +972,9 @@ async function cargarResumenIndicadores(params) {
         ${renderTendencia(it.cambio)}
       </div>
     `).join("");
+
+    // El embudo usa los mismos totales crudos que ya trajo este endpoint
+    renderGraficoEmbudo(actual);
   } catch (err) {
     console.error("Error al cargar el resumen de indicadores:", err.message);
     cont.innerHTML = `<div class="indicador-item"><p class="descripcion">No se pudo cargar el resumen.</p></div>`;
@@ -4168,3 +4172,259 @@ async function marcarSosAtendidaConfirmar(id) {
 }
 
 document.getElementById("btn-refrescar-sos").addEventListener("click", cargarPantallaSos);
+
+// ---------------------------------------------------------------------
+// ANÁLISIS OUTBOUND (embudo, motivos de no-venta, zonas, ticket, mix)
+// ---------------------------------------------------------------------
+let graficoEmbudoInstancia = null;
+let graficoMotivosInstancia = null;
+let graficoZonasInstancia = null;
+let graficoProductosInstancia = null;
+
+/** Colores consistentes para las etapas del embudo, de más leads a menos. */
+const COLORES_EMBUDO = ["#1a3a5c", "#2b7a78", "#c9962c", "#a3352b"];
+
+function renderGraficoEmbudo(actual) {
+  if (typeof Chart === "undefined") return;
+  const ctx = document.getElementById("graficoEmbudo");
+  if (!ctx) return;
+
+  if (graficoEmbudoInstancia) graficoEmbudoInstancia.destroy();
+
+  const etapas = [
+    { nombre: "Leads", valor: actual.leads_total },
+    { nombre: "Cobertura", valor: actual.cobertura_total },
+    { nombre: "Contactos", valor: actual.contactos_total },
+    { nombre: "Pedidos", valor: actual.pedidos_total },
+  ];
+
+  graficoEmbudoInstancia = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: etapas.map((e) => e.nombre),
+      datasets: [
+        {
+          data: etapas.map((e) => e.valor),
+          backgroundColor: COLORES_EMBUDO,
+          borderRadius: 6,
+          barPercentage: 0.65,
+        },
+      ],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { right: 60 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (item) => {
+              const pctDeLeads = etapas[0].valor > 0 ? Math.round((item.raw / etapas[0].valor) * 100) : 0;
+              return `${item.raw} (${pctDeLeads}% de los leads)`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { beginAtZero: true, grid: { color: "#eef1f4" }, ticks: { precision: 0 } },
+        y: { grid: { display: false } },
+      },
+    },
+    plugins: [
+      {
+        id: "etiquetasEmbudo",
+        afterDatasetsDraw(chart) {
+          const { ctx } = chart;
+          const meta = chart.getDatasetMeta(0);
+          ctx.save();
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.font = "700 12px sans-serif";
+          ctx.fillStyle = "#1a3a5c";
+          meta.data.forEach((barra, i) => {
+            const valor = etapas[i].valor;
+            const pct = etapas[0].valor > 0 ? Math.round((valor / etapas[0].valor) * 100) : 0;
+            const texto = i === 0 ? `${valor}` : `${valor} (${pct}%)`;
+            ctx.fillText(texto, barra.x + 8, barra.y);
+          });
+          ctx.restore();
+        },
+      },
+    ],
+  });
+}
+
+function renderGraficoMotivos(motivos) {
+  if (typeof Chart === "undefined") return;
+  const ctx = document.getElementById("graficoMotivos");
+  if (!ctx) return;
+
+  if (graficoMotivosInstancia) graficoMotivosInstancia.destroy();
+
+  if (!motivos || motivos.length === 0) {
+    ctx.parentElement.innerHTML = `<p class="descripcion">Sin visitas sin venta registradas este mes.</p>`;
+    return;
+  }
+
+  const coloresPorMotivo = { "No interesado": "#a3352b", "Reagendar": "#c9962c", "No ubicado": "#667085" };
+
+  graficoMotivosInstancia = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: motivos.map((m) => m.motivo),
+      datasets: [
+        {
+          data: motivos.map((m) => m.total),
+          backgroundColor: motivos.map((m) => coloresPorMotivo[m.motivo] || "#94a3b8"),
+          borderWidth: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: "60%",
+      plugins: {
+        legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } },
+      },
+    },
+  });
+}
+
+function renderGraficoZonas(zonas) {
+  if (typeof Chart === "undefined") return;
+  const ctx = document.getElementById("graficoZonas");
+  if (!ctx) return;
+
+  if (graficoZonasInstancia) graficoZonasInstancia.destroy();
+
+  if (!zonas || zonas.length === 0) {
+    ctx.parentElement.innerHTML = `<p class="descripcion">Sin ventas o contactos registrados este mes.</p>`;
+    return;
+  }
+
+  graficoZonasInstancia = new Chart(ctx, {
+    data: {
+      labels: zonas.map((z) => z.zona),
+      datasets: [
+        {
+          type: "bar",
+          label: "Monto S/",
+          data: zonas.map((z) => z.ventas_monto),
+          backgroundColor: "#c9962c",
+          borderRadius: 4,
+          barPercentage: 0.55,
+          yAxisID: "yMonto",
+          order: 2,
+        },
+        {
+          type: "line",
+          label: "Efectividad %",
+          data: zonas.map((z) => z.efectividad_pct),
+          borderColor: "#2b7a78",
+          backgroundColor: "#2b7a78",
+          pointRadius: 4,
+          pointBackgroundColor: "#2b7a78",
+          yAxisID: "yPct",
+          order: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (item) =>
+              item.dataset.label === "Monto S/" ? `Monto: ${formatoMoneda(item.raw)}` : `Efectividad: ${item.raw}%`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false } },
+        yMonto: {
+          position: "left",
+          beginAtZero: true,
+          ticks: { callback: (v) => formatoMoneda(v).replace(".00", "") },
+          grid: { color: "#eef1f4" },
+        },
+        yPct: {
+          position: "right",
+          beginAtZero: true,
+          max: 100,
+          ticks: { callback: (v) => `${v}%` },
+          grid: { display: false },
+        },
+      },
+    },
+  });
+}
+
+function renderGraficoProductos(productos) {
+  if (typeof Chart === "undefined") return;
+  const ctx = document.getElementById("graficoProductos");
+  if (!ctx) return;
+
+  if (graficoProductosInstancia) graficoProductosInstancia.destroy();
+
+  if (!productos || productos.length === 0) {
+    ctx.parentElement.innerHTML = `<p class="descripcion">Sin ventas registradas este mes.</p>`;
+    return;
+  }
+
+  graficoProductosInstancia = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: productos.map((p) => p.producto),
+      datasets: [
+        {
+          data: productos.map((p) => p.monto),
+          backgroundColor: "#2b7a78",
+          borderRadius: 4,
+          barPercentage: 0.6,
+        },
+      ],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (item) => `${formatoMoneda(item.raw)} (${productos[item.dataIndex].cantidad} unidades)`,
+          },
+        },
+      },
+      scales: {
+        x: { beginAtZero: true, ticks: { callback: (v) => formatoMoneda(v).replace(".00", "") }, grid: { color: "#eef1f4" } },
+        y: { grid: { display: false } },
+      },
+    },
+  });
+}
+
+async function cargarAnalisisOutbound(params) {
+  try {
+    const data = await apiFetch(`/kpis/analisis-outbound?${params.toString()}`);
+
+    renderGraficoMotivos(data.motivos_no_venta);
+    renderGraficoZonas(data.zona_performance);
+    renderGraficoProductos(data.producto_mix);
+
+    document.getElementById("kpi-leads-frios").textContent = data.leads_frios;
+    const cardFrios = document.getElementById("card-leads-frios");
+    if (data.leads_frios > 0) cardFrios.classList.add("kpi-card-alerta");
+    else cardFrios.classList.remove("kpi-card-alerta");
+
+    document.getElementById("kpi-ticket-promedio").textContent = formatoMoneda(data.ticket_promedio);
+    document.getElementById("kpi-ticket-tendencia").innerHTML = renderTendencia(data.ticket_promedio_cambio);
+  } catch (err) {
+    console.error("Error al cargar el análisis outbound:", err.message);
+  }
+}
