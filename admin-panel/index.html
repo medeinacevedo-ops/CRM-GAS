@@ -83,6 +83,11 @@
           <span id="sos-badge" class="sos-badge oculto">0</span>
         </button>
 
+        <button class="nav-item nav-item-top" data-vista="mensajes">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Z"/><path d="m22 6-10 7L2 6"/></svg>
+          <span>Mensajes</span>
+        </button>
+
         <div class="nav-grupo" data-grupo="base">
           <button class="nav-grupo-header">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
@@ -406,6 +411,50 @@
             <tr><th>Fecha</th><th>Vendedor</th><th>Zona</th><th>Ubicación</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
           <tbody id="tabla-sos"></tbody>
+        </table>
+      </section>
+
+      <!-- Mensajes -->
+      <section id="panel-mensajes" class="panel oculto">
+        <div class="panel-header">
+          <h2>Mensajes</h2>
+          <button id="btn-refrescar-mensajes" class="btn-secundario">Actualizar</button>
+        </div>
+        <p class="descripcion">
+          Envía un aviso al instante al buzón de la app de un vendedor específico, o a todos los vendedores activos a la vez.
+          El vendedor lo recibe en tiempo real (con aviso por voz) mientras tenga la app abierta y conectada.
+        </p>
+
+        <form id="form-mensaje">
+          <label for="mensaje-destinatario-tipo">Destinatario</label>
+          <select id="mensaje-destinatario-tipo">
+            <option value="todos">Todos los vendedores activos</option>
+            <option value="individual">Un vendedor específico</option>
+          </select>
+
+          <div id="campo-mensaje-vendedor" class="oculto">
+            <label for="mensaje-vendedor-input">Vendedor</label>
+            <select id="mensaje-vendedor-input"><option value="">Cargando...</option></select>
+          </div>
+
+          <label for="mensaje-titulo-input">Título (opcional)</label>
+          <input type="text" id="mensaje-titulo-input" maxlength="150" placeholder="Mensaje del Administrador">
+
+          <label for="mensaje-contenido-input">Mensaje</label>
+          <textarea id="mensaje-contenido-input" rows="4" maxlength="1000" required placeholder="Escribe aquí el mensaje..."></textarea>
+
+          <div class="modal-acciones" style="justify-content:flex-start;">
+            <button type="submit" id="btn-enviar-mensaje">Enviar mensaje</button>
+          </div>
+        </form>
+        <p id="mensaje-envio-feedback" class="mensaje"></p>
+
+        <h3 style="margin-top:28px;">Historial de mensajes enviados</h3>
+        <table class="tabla">
+          <thead>
+            <tr><th>Fecha</th><th>Destinatario</th><th>Título</th><th>Mensaje</th><th>Enviado por</th></tr>
+          </thead>
+          <tbody id="tabla-mensajes"></tbody>
         </table>
       </section>
 

@@ -140,6 +140,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.vista === "reparto") inicializarPantallaReparto();
     if (btn.dataset.vista === "dashboard") cargarDashboard();
     if (btn.dataset.vista === "sos") cargarPantallaSos();
+    if (btn.dataset.vista === "mensajes") cargarPantallaMensajes();
     if (btn.dataset.vista === "usuarios") cargarUsuarios();
     if (btn.dataset.vista === "pausas") cargarPausas();
     if (btn.dataset.vista === "intercambios") cargarIntercambios();
@@ -4172,6 +4173,105 @@ async function marcarSosAtendidaConfirmar(id) {
 }
 
 document.getElementById("btn-refrescar-sos").addEventListener("click", cargarPantallaSos);
+
+// ---------------------------------------------------------------------
+// MENSAJES (admin -> buzón de la app de vendedores)
+// ---------------------------------------------------------------------
+const formMensaje = document.getElementById("form-mensaje");
+const selectMensajeTipo = document.getElementById("mensaje-destinatario-tipo");
+const campoMensajeVendedor = document.getElementById("campo-mensaje-vendedor");
+const selectMensajeVendedor = document.getElementById("mensaje-vendedor-input");
+
+selectMensajeTipo.addEventListener("change", () => {
+  campoMensajeVendedor.classList.toggle("oculto", selectMensajeTipo.value !== "individual");
+});
+
+async function cargarVendedoresParaMensaje() {
+  try {
+    const vendedores = await apiFetch("/usuarios?rol=vendedor");
+    const activos = vendedores.filter((v) => v.activo);
+    selectMensajeVendedor.innerHTML =
+      `<option value="">Selecciona un vendedor</option>` +
+      activos.map((v) => `<option value="${v.id}">${v.nombre}</option>`).join("");
+  } catch (err) {
+    selectMensajeVendedor.innerHTML = `<option value="">Error al cargar vendedores</option>`;
+  }
+}
+
+async function cargarHistorialMensajes() {
+  const tbody = document.getElementById("tabla-mensajes");
+  tbody.innerHTML = `<tr><td colspan="5">Cargando...</td></tr>`;
+  try {
+    const mensajes = await apiFetch("/mensajes");
+
+    if (mensajes.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);">Aún no se ha enviado ningún mensaje.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = mensajes
+      .map(
+        (m) => `
+        <tr>
+          <td>${new Date(m.enviado_en).toLocaleString("es-PE")}</td>
+          <td>${m.vendedor_id ? m.vendedor_nombre || "—" : "Todos los vendedores"}</td>
+          <td>${m.titulo}</td>
+          <td>${m.contenido}</td>
+          <td>${m.admin_nombre || "—"}</td>
+        </tr>`
+      )
+      .join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5">Error al cargar el historial: ${err.message}</td></tr>`;
+  }
+}
+
+async function cargarPantallaMensajes() {
+  cargarVendedoresParaMensaje();
+  cargarHistorialMensajes();
+}
+
+formMensaje.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const feedback = document.getElementById("mensaje-envio-feedback");
+  feedback.textContent = "";
+  feedback.classList.remove("error");
+
+  const esIndividual = selectMensajeTipo.value === "individual";
+  const vendedorId = esIndividual ? selectMensajeVendedor.value : null;
+
+  if (esIndividual && !vendedorId) {
+    feedback.textContent = "Selecciona un vendedor.";
+    feedback.classList.add("error");
+    return;
+  }
+
+  const payload = {
+    vendedor_id: vendedorId || null,
+    titulo: document.getElementById("mensaje-titulo-input").value,
+    contenido: document.getElementById("mensaje-contenido-input").value,
+  };
+
+  const btnEnviar = document.getElementById("btn-enviar-mensaje");
+  btnEnviar.disabled = true;
+  btnEnviar.textContent = "Enviando...";
+
+  try {
+    const resultado = await apiFetch("/mensajes", { method: "POST", body: JSON.stringify(payload) });
+    feedback.textContent = `Mensaje enviado a ${resultado.destinatarios} vendedor(es).`;
+    formMensaje.reset();
+    campoMensajeVendedor.classList.add("oculto");
+    cargarHistorialMensajes();
+  } catch (err) {
+    feedback.textContent = err.message;
+    feedback.classList.add("error");
+  } finally {
+    btnEnviar.disabled = false;
+    btnEnviar.textContent = "Enviar mensaje";
+  }
+});
+
+document.getElementById("btn-refrescar-mensajes").addEventListener("click", cargarHistorialMensajes);
 
 // ---------------------------------------------------------------------
 // ANÁLISIS OUTBOUND (embudo, motivos de no-venta, zonas, ticket, mix)
