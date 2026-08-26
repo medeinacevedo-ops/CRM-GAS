@@ -96,6 +96,10 @@ body {
   padding: 24px 16px;
   display: flex;
   flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .marca-logo-wrap {
