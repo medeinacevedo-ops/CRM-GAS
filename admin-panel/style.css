@@ -1,6 +1,7 @@
 :root {
-  --navy: #132a42;
-  --navy-2: #1a3a5c;
+  --navy: #07276a;       /* A3 Pulse: azul marino del logo */
+  --navy-2: #0d3a8f;
+  --pulse-blue: #0864f9; /* A3 Pulse: azul vivo del logo ("PULSE") */
   --teal: #2b7a78;
   --gold: #c9962c;
   --coral: #a3352b;
@@ -133,7 +134,7 @@ body {
 }
 .nav-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-item:hover { background: rgba(255,255,255,0.06); color: white; }
-.nav-item.activo { background: var(--teal); color: white; font-weight: 600; }
+.nav-item.activo { background: var(--pulse-blue); color: white; font-weight: 600; }
 .nav-item.activo .nav-icon { color: white; }
 
 .nav-item-top { margin-bottom: 6px; font-size: 13.5px; }
@@ -186,6 +187,21 @@ body {
 .nav-grupo.abierto .nav-grupo-items { max-height: 400px; }
 .nav-grupo-items .nav-item { padding-left: 10px; font-size: 12.5px; }
 .nav-grupo-items .nav-icon { width: 14px; height: 14px; }
+
+/* ---------- GRUPO SENSIBLE: CORRECCIONES ---------- */
+.nav-grupo-sensible { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.12); }
+.nav-grupo-sensible > .nav-grupo-header { color: #f0997b; }
+.nav-grupo-sensible > .nav-grupo-header:hover { color: #f7b8a2; background: rgba(163,53,43,0.12); }
+.nav-grupo-sensible > .nav-grupo-header .nav-icon { color: var(--coral); opacity: 1; }
+.nav-grupo-sensible.abierto > .nav-grupo-header { color: #f7b8a2; }
+.nav-subgrupo-label {
+  margin: 6px 0 2px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #8ea0b3;
+}
 
 .sidebar-footer {
   border-top: 1px solid rgba(255,255,255,0.12);
