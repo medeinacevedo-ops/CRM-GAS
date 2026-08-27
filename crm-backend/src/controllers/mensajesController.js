@@ -94,7 +94,10 @@ async function enviarMensaje(req, res) {
 
 /**
  * Historial de mensajes enviados (más recientes primero), con el nombre
- * del vendedor destinatario (o "Todos" si fue masivo) y del admin que lo envió.
+ * del vendedor destinatario (o "Todos" si fue masivo), quién lo envió, y
+ * cuántos de los destinatarios ya confirmaron haberlo recibido (total_entregados
+ * de total_destinatarios) -- un vendedor que estaba desconectado en el momento
+ * del envío cuenta como pendiente hasta que se reconecta y hace el catch-up.
  */
 async function listarHistorial(req, res) {
   const limit = Math.min(200, parseInt(req.query.limit) || 50);
@@ -102,10 +105,14 @@ async function listarHistorial(req, res) {
     const [rows] = await pool.query(
       `SELECT m.id, m.titulo, m.contenido, m.enviado_en, m.vendedor_id,
               v.nombre AS vendedor_nombre,
-              a.nombre AS admin_nombre
+              a.nombre AS admin_nombre,
+              COUNT(e.id) AS total_destinatarios,
+              SUM(CASE WHEN e.entregado = 1 THEN 1 ELSE 0 END) AS total_entregados
        FROM mensajes_admin m
        LEFT JOIN usuarios v ON v.id = m.vendedor_id
        LEFT JOIN usuarios a ON a.id = m.admin_id
+       LEFT JOIN mensajes_admin_entregas e ON e.mensaje_id = m.id
+       GROUP BY m.id, m.titulo, m.contenido, m.enviado_en, m.vendedor_id, v.nombre, a.nombre
        ORDER BY m.enviado_en DESC
        LIMIT ?`,
       [limit]

@@ -4200,29 +4200,33 @@ async function cargarVendedoresParaMensaje() {
 
 async function cargarHistorialMensajes() {
   const tbody = document.getElementById("tabla-mensajes");
-  tbody.innerHTML = `<tr><td colspan="5">Cargando...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="6">Cargando...</td></tr>`;
   try {
     const mensajes = await apiFetch("/mensajes");
 
     if (mensajes.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);">Aún no se ha enviado ningún mensaje.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-muted);">Aún no se ha enviado ningún mensaje.</td></tr>`;
       return;
     }
 
     tbody.innerHTML = mensajes
-      .map(
-        (m) => `
+      .map((m) => {
+        const total = Number(m.total_destinatarios) || 0;
+        const entregados = Number(m.total_entregados) || 0;
+        const completo = total > 0 && entregados >= total;
+        return `
         <tr>
           <td>${new Date(m.enviado_en).toLocaleString("es-PE")}</td>
           <td>${m.vendedor_id ? m.vendedor_nombre || "—" : "Todos los vendedores"}</td>
           <td>${m.titulo}</td>
           <td>${m.contenido}</td>
           <td>${m.admin_nombre || "—"}</td>
-        </tr>`
-      )
+          <td><span class="badge-entrega ${completo ? "completa" : "parcial"}">Entregado a ${entregados} de ${total}</span></td>
+        </tr>`;
+      })
       .join("");
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5">Error al cargar el historial: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">Error al cargar el historial: ${err.message}</td></tr>`;
   }
 }
 

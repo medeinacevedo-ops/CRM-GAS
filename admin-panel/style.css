@@ -856,6 +856,16 @@ form button:hover { background: #236360; }
 .badge-sos-estado.pendiente { background: #fdeceb; color: var(--coral); }
 .badge-sos-estado.atendida { background: #e6f2f1; color: var(--teal); }
 
+.badge-entrega {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.badge-entrega.parcial { background: #fdf3e3; color: var(--gold); }
+.badge-entrega.completa { background: #e6f2f1; color: var(--teal); }
+
 .notif-badge {
   position: absolute;
   top: -4px;
