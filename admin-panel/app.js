@@ -4221,14 +4221,66 @@ async function cargarHistorialMensajes() {
           <td>${m.titulo}</td>
           <td>${m.contenido}</td>
           <td>${m.admin_nombre || "—"}</td>
-          <td><span class="badge-entrega ${completo ? "completa" : "parcial"}">Entregado a ${entregados} de ${total}</span></td>
+          <td><span class="badge-entrega ${completo ? "completa" : "parcial"}" data-mensaje-id="${m.id}" data-titulo="${m.titulo.replace(/"/g, "&quot;")}" title="Ver detalle">Entregado a ${entregados} de ${total}</span></td>
         </tr>`;
       })
       .join("");
+
+    tbody.querySelectorAll(".badge-entrega").forEach((badge) => {
+      badge.addEventListener("click", () => {
+        abrirDetalleMensaje(badge.dataset.mensajeId, badge.dataset.titulo);
+      });
+    });
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="6">Error al cargar el historial: ${err.message}</td></tr>`;
   }
 }
+
+const modalDetalleMensaje = document.getElementById("modal-detalle-mensaje");
+
+async function abrirDetalleMensaje(mensajeId, titulo) {
+  document.getElementById("detalle-mensaje-titulo").textContent = titulo || "Detalle de entrega";
+  const resumen = document.getElementById("detalle-mensaje-resumen");
+  const lista = document.getElementById("detalle-mensaje-lista");
+  resumen.textContent = "";
+  lista.innerHTML = "Cargando...";
+  modalDetalleMensaje.classList.remove("oculto");
+
+  try {
+    const destinatarios = await apiFetch(`/mensajes/${mensajeId}/detalle`);
+
+    const pendientes = destinatarios.filter((d) => !d.entregado);
+    const entregados = destinatarios.filter((d) => d.entregado);
+
+    resumen.textContent = `Entregado a ${entregados.length} de ${destinatarios.length} vendedores.`;
+
+    const filaVendedor = (d) => `
+      <div class="detalle-entrega-fila">
+        <span>${d.vendedor_nombre}</span>
+        ${d.entregado_en ? `<span class="fecha-entrega">${new Date(d.entregado_en).toLocaleString("es-PE")}</span>` : ""}
+      </div>`;
+
+    let html = "";
+    if (pendientes.length > 0) {
+      html += `<p class="detalle-entrega-grupo-titulo">Pendientes (${pendientes.length})</p>`;
+      html += pendientes.map(filaVendedor).join("");
+    }
+    if (entregados.length > 0) {
+      html += `<p class="detalle-entrega-grupo-titulo">Entregados (${entregados.length})</p>`;
+      html += entregados.map(filaVendedor).join("");
+    }
+    lista.innerHTML = html || `<p style="color:var(--text-muted);">No hay destinatarios registrados para este mensaje.</p>`;
+  } catch (err) {
+    lista.innerHTML = `<p class="mensaje error">Error al cargar el detalle: ${err.message}</p>`;
+  }
+}
+
+document.getElementById("btn-cerrar-detalle-mensaje").addEventListener("click", () => {
+  modalDetalleMensaje.classList.add("oculto");
+});
+modalDetalleMensaje.addEventListener("click", (e) => {
+  if (e.target === modalDetalleMensaje) modalDetalleMensaje.classList.add("oculto");
+});
 
 async function cargarPantallaMensajes() {
   cargarVendedoresParaMensaje();

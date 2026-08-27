@@ -125,6 +125,30 @@ async function listarHistorial(req, res) {
 }
 
 /**
+ * Detalle de un mensaje puntual: la lista de cada vendedor destinatario con
+ * su estado de entrega (pendiente o entregado, y cuándo confirmó). Pensado
+ * para que el admin pueda ver exactamente a quién le falta llegar.
+ */
+async function detalleMensaje(req, res) {
+  const { id } = req.params;
+  try {
+    const [rows] = await pool.query(
+      `SELECT e.vendedor_id, u.nombre AS vendedor_nombre,
+              e.entregado, e.entregado_en
+       FROM mensajes_admin_entregas e
+       JOIN usuarios u ON u.id = e.vendedor_id
+       WHERE e.mensaje_id = ?
+       ORDER BY e.entregado ASC, u.nombre ASC`,
+      [id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al listar el detalle del mensaje" });
+  }
+}
+
+/**
  * Para que la app consulte al conectar/reconectar: mensajes que le
  * corresponden a este vendedor y que aún no confirmó haber recibido.
  * Requiere auth de vendedor (usa el usuario del token, no un id en la URL,
@@ -175,4 +199,4 @@ async function confirmarEntrega(req, res) {
   }
 }
 
-module.exports = { enviarMensaje, listarHistorial, listarPendientes, confirmarEntrega };
+module.exports = { enviarMensaje, listarHistorial, detalleMensaje, listarPendientes, confirmarEntrega };

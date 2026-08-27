@@ -450,12 +450,25 @@
         <p id="mensaje-envio-feedback" class="mensaje"></p>
 
         <h3 style="margin-top:28px;">Historial de mensajes enviados</h3>
+        <p class="descripcion" style="margin-top:-4px;">Haz clic en el estado de entrega de cualquier fila para ver exactamente a quién le falta.</p>
         <table class="tabla">
           <thead>
             <tr><th>Fecha</th><th>Destinatario</th><th>Título</th><th>Mensaje</th><th>Enviado por</th><th>Entrega</th></tr>
           </thead>
           <tbody id="tabla-mensajes"></tbody>
         </table>
+
+        <!-- Modal detalle de entrega -->
+        <div id="modal-detalle-mensaje" class="modal oculto">
+          <div class="modal-card">
+            <h3 id="detalle-mensaje-titulo">Detalle de entrega</h3>
+            <p class="descripcion" id="detalle-mensaje-resumen"></p>
+            <div id="detalle-mensaje-lista"></div>
+            <div class="modal-acciones">
+              <button type="button" id="btn-cerrar-detalle-mensaje" class="btn-secundario">Cerrar</button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Cargar base -->
